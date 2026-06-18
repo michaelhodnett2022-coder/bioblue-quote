@@ -215,16 +215,21 @@ input:checked + .slider:before{transform:translateX(16px);}
     </a>
   </div>
   <div class="no-client-banner" id="noClientBanner">
-    <div style="font-size:20px;">⚠️</div>
+    <div style="font-size:20px;">🔍</div>
     <div style="flex:1;">
-      <div style="font-size:13px;font-weight:700;color:#92400e;">No client selected</div>
-      <div style="font-size:12px;color:#78350f;">Fill in client details below, or go back to Field Tools to select a client</div>
+      <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:6px;">No client selected — enter Client ID to load</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <input type="text" id="manualClientId" placeholder="e.g. BB-0001"
+          style="flex:1;min-width:120px;padding:8px 12px;border:1.5px solid #f59e0b;border-radius:6px;
+          font-size:13px;font-family:'DM Sans',sans-serif;background:white;color:#78350f;"
+          onkeydown="if(event.key==='Enter')loadManualClient()">
+        <button onclick="loadManualClient()"
+          style="background:#d97706;color:white;border:none;border-radius:6px;padding:8px 16px;
+          font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;">
+          ↗ Load Client
+        </button>
+      </div>
     </div>
-    <a href="https://michaelhodnett2022-coder.github.io/bioblue-field-tools"
-      style="font-size:11px;font-weight:600;color:#92400e;text-decoration:none;
-      background:white;border:1.5px solid #f59e0b;border-radius:6px;padding:5px 10px;white-space:nowrap;">
-      ← Field Tools
-    </a>
   </div>
 
   <!-- SECTION 1: QUOTE SETUP -->
@@ -503,6 +508,11 @@ input:checked + .slider:before{transform:translateX(16px);}
 const GDRIVE_CLIENT_ID   = '49055725643-mlnqu8l92vmau83rnrk8imupiqvs03t1.apps.googleusercontent.com';
 const GDRIVE_FOLDER_NAME = 'BioBlue Audits';
 const CLIENT_RECORDS_NAME= 'BioBlue_Client_Records.xlsx';
+const COUNTER_FILENAME   = 'BB_Quote_Counter.json';
+const COUNTER_START      = 2399;
+const EMAILJS_PUBLIC_KEY = 'VOzIE82-mIbrEcuPK';
+const EMAILJS_SERVICE    = 'service_f0s6xv5';
+const EMAILJS_TEMPLATE   = 'template_9wr2vra'; // reuses audit notification template
 let gdriveToken = null;
 
 const BDMS = {
@@ -532,6 +542,7 @@ let clientType = 'new'; // 'new' | 'existing'
 // INIT
 // =====================================================================
 document.addEventListener('DOMContentLoaded', () => {
+  try { if(typeof emailjs!=='undefined') emailjs.init(EMAILJS_PUBLIC_KEY); } catch(e){}
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('quoteDate').value = today;
   generateQuoteNumber();
@@ -1199,38 +1210,211 @@ async function downloadPDF() {
 }
 
 // =====================================================================
-// DRIVE — save PDF to client folder
+// MANUAL CLIENT LOAD
+// =====================================================================
+function loadManualClient() {
+  const id = (document.getElementById('manualClientId')?.value||'').trim().toUpperCase();
+  if (!id) { showToast('⚠️ Enter a Client ID first'); return; }
+  // Push to URL so it persists
+  const url = new URL(window.location);
+  url.searchParams.set('client', id);
+  window.history.pushState({}, '', url);
+  // Swap banners
+  document.getElementById('noClientBanner').style.display = 'none';
+  const cb = document.getElementById('clientBanner');
+  if (cb) { cb.style.display = 'flex'; }
+  document.getElementById('bannerClientId').textContent   = 'Ref: ' + id;
+  document.getElementById('bannerClientName').textContent = 'Loading…';
+  fetchClientDetails(id);
+}
+
+// =====================================================================
+// SEQUENTIAL QUOTE COUNTER (BB_Quote_Counter.json in AA_App_Admin)
+// =====================================================================
+async function getAdminFolderId(rootFolderId) {
+  const sr = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=name='AA_App_Admin' and '${rootFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
+    { headers:{ Authorization:`Bearer ${gdriveToken}` } });
+  const sd = await sr.json();
+  if (sd.files && sd.files.length) return sd.files[0].id;
+  const cr = await fetch('https://www.googleapis.com/drive/v3/files',
+    { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}`,'Content-Type':'application/json' },
+      body: JSON.stringify({ name:'AA_App_Admin', mimeType:'application/vnd.google-apps.folder', parents:[rootFolderId] }) });
+  return (await cr.json()).id;
+}
+
+async function getNextQuoteCounter() {
+  try {
+    const rootFolderId  = await getFolderId();
+    const adminFolderId = await getAdminFolderId(rootFolderId);
+
+    const sr = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=name='${COUNTER_FILENAME}' and '${adminFolderId}' in parents and trashed=false&fields=files(id)`,
+      { headers:{ Authorization:`Bearer ${gdriveToken}` } });
+    const sd = await sr.json();
+
+    let counter = COUNTER_START + 1;
+    let fileId  = null;
+
+    if (sd.files && sd.files.length) {
+      fileId = sd.files[0].id;
+      const dl   = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+        { headers:{ Authorization:`Bearer ${gdriveToken}` } });
+      const data = await dl.json();
+      counter = (parseInt(data.counter)||COUNTER_START) + 1;
+    }
+
+    // Save incremented counter back
+    const blob = new Blob([JSON.stringify({ counter, updatedAt:new Date().toISOString() })],
+      { type:'application/json' });
+    const fm = new FormData();
+    if (fileId) {
+      fm.append('metadata', new Blob([JSON.stringify({})], { type:'application/json' }));
+      fm.append('file', blob, COUNTER_FILENAME);
+      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`,
+        { method:'PATCH', headers:{ Authorization:`Bearer ${gdriveToken}` }, body:fm });
+    } else {
+      fm.append('metadata', new Blob([JSON.stringify({ name:COUNTER_FILENAME, parents:[adminFolderId] })], { type:'application/json' }));
+      fm.append('file', blob, COUNTER_FILENAME);
+      await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+        { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}` }, body:fm });
+    }
+    return counter;
+  } catch(e) {
+    console.warn('Counter error:', e.message);
+    return Math.floor(Math.random()*9000)+1000; // fallback random
+  }
+}
+
+function buildQuoteRef(counter, companyName, dateStr) {
+  const qNum = 'Q' + String(counter).padStart(6,'0');
+  // Slug from company name — clean, hyphenated, title-cased
+  const slug = (companyName||'Client')
+    .replace(/[^a-zA-Z0-9\s]/g,'').trim()
+    .split(/\s+/).join('-');
+  // Date DDMMYYYY from YYYY-MM-DD
+  const parts = (dateStr||new Date().toISOString().split('T')[0]).split('-');
+  const ddmmyyyy = (parts[2]||'00')+(parts[1]||'00')+(parts[0]||'0000');
+  return `${qNum}-${slug}-${ddmmyyyy}`;
+}
+
+// =====================================================================
+// EMAIL NOTIFICATION (reuses audit template)
+// =====================================================================
+async function sendQuoteEmail(d, pdfLink, wordLink) {
+  if (typeof emailjs === 'undefined') { console.warn('EmailJS not loaded'); return; }
+  const bulkSummary = d.bulkRows.map(r =>
+    `  ${r.depot||'—'}: Bulk ${r.bulkCpl||'—'}¢ + Freight ${r.freightCpl||'—'}¢ = ${r.delivered||'—'}¢/L`
+  ).join('\n');
+  const pkgSummary = d.pkgRows.map(r =>
+    `  ${r.depot||'—'}: ${r.code||'—'} — $${r.unitPrice||'—'}/unit, freight $${r.freightPrice||'—'}/pallet`
+  ).join('\n');
+  const pricingBlock = [
+    d.includeBulk    && bulkSummary ? 'BULK:\n' + bulkSummary   : '',
+    d.includePackaged && pkgSummary ? 'PACKAGED:\n' + pkgSummary : '',
+  ].filter(Boolean).join('\n\n') || 'No pricing rows entered.';
+
+  await emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, {
+    to_email:           d.bdmSignEmail || 'michael.hodnett@bioblue.com.au',
+    reply_to:           'michaelhodnett2022@gmail.com',
+    customer_name:      d.companyName,
+    audit_date:         d.quoteDate ? new Date(d.quoteDate+'T12:00:00').toLocaleDateString('en-AU') : '—',
+    address:            d.siteAddress || '—',
+    auditor_name:       d.bdmSignName || 'BioBlue BDM',
+    site_number:        d.quoteNumber,
+    audit_score:        'Quote Generated ✅',
+    photo_count:        `Valid for ${d.validDays||30} days`,
+    failures:           pricingBlock,
+    corrective_actions: `PDF: ${pdfLink||'Not saved'}\nWord: ${wordLink||'Not saved'}`,
+    message:            `Quote ${d.quoteNumber} for ${d.companyName} has been generated and saved to Google Drive.\n\nReview and approve before forwarding to the client.`,
+  });
+}
+
+// =====================================================================
+// WORD DOC DRIVE UPLOAD
+// =====================================================================
+async function uploadWordToDrive(clientFolderId, baseName, d) {
+  if (typeof htmlDocx === 'undefined') return '';
+  try {
+    const html = buildQuoteHTML(d);
+    const blob = htmlDocx.asBlob(html, { orientation:'portrait',
+      margins:{ top:1000, right:1000, bottom:1000, left:1000 } });
+    const fm = new FormData();
+    fm.append('metadata', new Blob([JSON.stringify({ name:baseName+'.docx', parents:[clientFolderId] })], { type:'application/json' }));
+    fm.append('file', blob, baseName+'.docx');
+    const up = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+      { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}` }, body:fm });
+    return (await up.json()).webViewLink || '';
+  } catch(e) {
+    console.warn('Word upload failed:', e.message);
+    return '';
+  }
+}
+
+// =====================================================================
+// DRIVE — save PDF + Word to client folder, then email BDM
 // =====================================================================
 async function saveToDrive() {
   const d = collectData();
   if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
   const clientId = new URLSearchParams(window.location.search).get('client');
+
   showToast('☁️ Connecting to Google…');
   try {
     await getDriveToken();
-    const folderId    = await getFolderId();
+    const rootFolderId   = await getFolderId();
     const clientFolderName = d.companyName;
     const clientFolderId   = clientId
-      ? await getClientFolderFromRecord(folderId, clientId, clientFolderName)
-      : await getOrCreateClientFolder(folderId, clientFolderName);
+      ? await getClientFolderFromRecord(rootFolderId, clientId, clientFolderName)
+      : await getOrCreateClientFolder(rootFolderId, clientFolderName);
+
+    // Get real sequential quote number
+    showToast('🔢 Generating quote number…');
+    const counter     = await getNextQuoteCounter();
+    const quoteRef    = buildQuoteRef(counter, d.companyName, d.quoteDate);
+    d.quoteNumber     = quoteRef;
+    document.getElementById('quoteNumber').value = quoteRef;
+    const baseName    = `BioBlue_Quote_${quoteRef}`;
+
+    // Upload PDF
+    showToast('📄 Saving PDF to Drive…');
     const pdfDoc  = await generatePDF(true);
     const pdfBlob = pdfDoc.output('blob');
-    const baseName = `BioBlue_Quote_${d.companyName.replace(/\s+/g,'_')}_${d.quoteNumber||'Q'}`;
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify({ name: baseName+'.pdf', parents:[clientFolderId] })], {type:'application/json'}));
-    form.append('file', pdfBlob, baseName+'.pdf');
-    const up = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
-      { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}` }, body:form });
-    const upr = await up.json();
-    const link = upr.webViewLink || '';
+    const pdfFm   = new FormData();
+    pdfFm.append('metadata', new Blob([JSON.stringify({ name:baseName+'.pdf', parents:[clientFolderId] })], { type:'application/json' }));
+    pdfFm.append('file', pdfBlob, baseName+'.pdf');
+    const pdfUp  = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+      { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}` }, body:pdfFm });
+    const pdfRes = await pdfUp.json();
+    const pdfLink = pdfRes.webViewLink || '';
+
+    // Upload Word doc
+    showToast('📝 Saving Word doc to Drive…');
+    const wordLink = await uploadWordToDrive(clientFolderId, baseName, d);
+
+    // Send email to BDM
+    showToast('📧 Sending email notification…');
+    try { await sendQuoteEmail(d, pdfLink, wordLink); }
+    catch(e) { console.warn('Email failed:', e.message); }
+
+    // Success modal
     document.getElementById('modalTitle').textContent = '✅ Quote Saved';
-    document.getElementById('modalMsg').textContent = `Quote saved to Google Drive.\n\n📄 ${baseName}.pdf${link ? '\n\n' + link : ''}`;
+    document.getElementById('modalMsg').textContent =
+      `Quote saved to Google Drive and emailed to ${d.bdmSignEmail||'your inbox'}.\n\n` +
+      `📋 ${quoteRef}\n🏢 ${d.companyName}\n\n` +
+      `📄 PDF: ${pdfLink ? 'Saved ✅' : 'Save failed ⚠️'}\n` +
+      `📝 Word: ${wordLink ? 'Saved ✅' : 'Save failed ⚠️'}\n` +
+      (pdfLink ? `\n${pdfLink}` : '');
     document.getElementById('modalFieldToolsBtn').style.display = clientId ? 'inline-block' : 'none';
     document.getElementById('modal').classList.add('active');
-    showToast('✅ Quote saved to Drive!');
+    showToast('✅ Quote saved and sent!');
+
   } catch(e) {
     gdriveToken = null;
-    showToast('⚠️ Drive save failed: ' + e.message);
+    showToast('⚠️ Save failed: ' + e.message);
+    document.getElementById('modalTitle').textContent = '⚠️ Save Failed';
+    document.getElementById('modalMsg').textContent = e.message + '\n\nPlease try again.';
+    document.getElementById('modal').classList.add('active');
   }
 }
 
@@ -1404,6 +1588,7 @@ function showToast(msg, dur=2500) {
 }
 </script>
 
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <!-- html-docx-js for Word export -->
 <script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
 </body>
