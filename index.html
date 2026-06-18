@@ -1,0 +1,1410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="BioBlue Quote">
+<title>BioBlue Quote Builder</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBb-EHe4hw-UmY9xFNRDMwbf-A27S2WbPQ&libraries=places" async defer></script>
+<style>
+:root {
+  --navy:#003466;--blue:#0055a5;--blue-bright:#0077cc;
+  --blue-light:#e8f2fb;--blue-pale:#f4f9ff;
+  --green:#00875a;--green-light:#e3f5ee;
+  --red:#c0392b;--red-light:#fdecea;
+  --amber:#e67e22;--amber-light:#fef5e7;
+  --gray-dark:#2c3e50;--gray-mid:#6b7280;--gray-light:#e5e7eb;--gray-pale:#f9fafb;
+  --shadow:0 2px 12px rgba(0,52,102,0.10);--shadow-lg:0 8px 32px rgba(0,52,102,0.18);
+  --radius:12px;--radius-sm:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',sans-serif;background:#f0f4f8;color:var(--gray-dark);min-height:100vh;-webkit-font-smoothing:antialiased;}
+
+/* HEADER */
+.app-header{background:linear-gradient(135deg,var(--navy) 0%,var(--blue) 100%);color:white;padding:20px 20px 16px;position:sticky;top:0;z-index:100;box-shadow:var(--shadow-lg);}
+.header-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.logo-badge{background:rgba(255,255,255,0.2);border-radius:8px;padding:6px 10px;font-family:'DM Mono',monospace;font-size:13px;font-weight:500;letter-spacing:1px;color:#a8d4f5;}
+.header-title{font-size:17px;font-weight:700;}
+.header-subtitle{font-size:12px;opacity:0.7;font-weight:300;}
+.progress-bar-wrap{background:rgba(255,255,255,0.15);border-radius:4px;height:5px;overflow:hidden;margin-top:10px;}
+.progress-bar-fill{height:100%;background:#64d2ff;border-radius:4px;transition:width 0.4s ease;width:0%;}
+.progress-label{font-size:11px;opacity:0.7;margin-top:4px;text-align:right;}
+
+/* LAYOUT */
+.main-content{max-width:860px;margin:0 auto;padding:20px 16px 120px;}
+
+/* CARDS */
+.section-card{background:white;border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:20px;overflow:hidden;}
+.section-header{background:var(--navy);color:white;padding:14px 20px;display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none;}
+.section-header-icon{background:rgba(255,255,255,0.2);border-radius:6px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.section-header-text{flex:1;}
+.section-header h2{font-size:14px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;}
+.section-header p{font-size:11px;opacity:0.7;margin-top:1px;}
+.section-toggle{font-size:18px;opacity:0.7;}
+.section-body{padding:20px;}
+.section-body.collapsed{display:none;}
+
+/* FIELDS */
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+.field-row.full{grid-template-columns:1fr;}
+.field-row.three{grid-template-columns:1fr 1fr 1fr;}
+@media(max-width:520px){.field-row,.field-row.three{grid-template-columns:1fr;}}
+.field-group{display:flex;flex-direction:column;gap:5px;}
+.field-label{font-size:12px;font-weight:600;color:var(--gray-mid);text-transform:uppercase;letter-spacing:0.4px;}
+.field-label.required::after{content:' *';color:var(--red);}
+input[type="text"],input[type="email"],input[type="tel"],input[type="date"],input[type="number"],textarea,select{
+  width:100%;padding:10px 12px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);
+  font-family:'DM Sans',sans-serif;font-size:14px;color:var(--gray-dark);background:var(--gray-pale);
+  transition:border-color 0.15s;-webkit-appearance:none;
+}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(0,85,165,0.12);background:white;}
+textarea{resize:vertical;min-height:90px;}
+
+/* CLIENT TYPE TOGGLE */
+.type-toggle{display:flex;gap:8px;margin-bottom:4px;}
+.type-btn{flex:1;padding:11px 8px;border-radius:var(--radius-sm);border:2px solid var(--gray-light);
+  background:white;color:var(--gray-mid);font-family:'DM Sans',sans-serif;
+  font-size:13px;font-weight:600;cursor:pointer;text-align:center;transition:all 0.15s;}
+.type-btn.active-new{background:var(--blue-light);border-color:var(--blue);color:var(--navy);}
+.type-btn.active-existing{background:var(--green-light);border-color:var(--green);color:var(--green);}
+
+/* PRICING TABLE */
+.pricing-section{margin-bottom:20px;}
+.pricing-section-header{display:flex;align-items:center;justify-content:space-between;
+  background:var(--blue-light);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:10px;}
+.pricing-section-title{font-size:13px;font-weight:700;color:var(--navy);}
+.pricing-toggle-wrap{display:flex;align-items:center;gap:8px;}
+.pricing-toggle-label{font-size:11px;color:var(--gray-mid);font-weight:600;}
+.toggle-switch{position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;}
+.toggle-switch input{opacity:0;width:0;height:0;}
+.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:var(--gray-light);
+  border-radius:20px;transition:0.3s;}
+.slider:before{position:absolute;content:"";height:14px;width:14px;left:3px;bottom:3px;
+  background:white;border-radius:50%;transition:0.3s;}
+input:checked + .slider{background:var(--blue);}
+input:checked + .slider:before{transform:translateX(16px);}
+
+.pricing-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.pricing-table{width:100%;border-collapse:collapse;min-width:500px;}
+.pricing-table th{background:var(--navy);color:white;padding:9px 10px;font-size:11px;font-weight:700;text-align:left;white-space:nowrap;}
+.pricing-table td{padding:6px 8px;border-bottom:1px solid var(--gray-light);vertical-align:middle;}
+.pricing-table tr:hover td{background:var(--blue-pale);}
+.pricing-table input[type="text"]{padding:7px 8px;font-size:13px;border-radius:6px;min-height:34px;}
+.pricing-table select{padding:7px 8px;font-size:13px;border-radius:6px;min-height:34px;}
+.remove-row-btn{background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:4px 6px;
+  border-radius:4px;transition:background 0.15s;line-height:1;}
+.remove-row-btn:hover{background:var(--red-light);}
+.add-row-btn{display:flex;align-items:center;gap:6px;background:white;border:1.5px dashed var(--blue);
+  color:var(--blue);border-radius:var(--radius-sm);padding:8px 14px;font-size:12px;font-weight:700;
+  cursor:pointer;margin-top:8px;font-family:'DM Sans',sans-serif;transition:background 0.15s;}
+.add-row-btn:hover{background:var(--blue-pale);}
+
+/* VALIDITY DISPLAY */
+.validity-display{background:var(--blue-pale);border:1.5px solid var(--blue-light);
+  border-radius:var(--radius-sm);padding:10px 14px;margin-top:8px;
+  font-size:12px;color:var(--navy);font-weight:600;}
+
+/* QUOTE NUMBER */
+.quote-number-wrap{display:flex;gap:8px;align-items:center;}
+.quote-number-wrap input{font-family:'DM Mono',monospace;font-weight:600;color:var(--navy);}
+.regen-btn{background:var(--blue-pale);border:1.5px solid var(--blue-light);color:var(--blue);
+  border-radius:6px;padding:8px 10px;font-size:11px;font-weight:700;cursor:pointer;
+  white-space:nowrap;font-family:'DM Sans',sans-serif;flex-shrink:0;}
+.regen-btn:hover{background:var(--blue-light);}
+
+/* BANNERS */
+.client-banner{display:none;align-items:center;gap:12px;background:#e8f2fb;border:1.5px solid var(--blue);
+  border-radius:10px;padding:12px 16px;margin-bottom:20px;flex-wrap:wrap;}
+.no-client-banner{display:none;align-items:center;gap:12px;background:#fff7ed;border:1.5px solid #f59e0b;
+  border-radius:10px;padding:12px 16px;margin-bottom:20px;}
+
+/* FOOTER */
+.sticky-footer{position:fixed;bottom:0;left:0;right:0;background:white;border-top:2px solid var(--blue-light);
+  padding:10px 16px;display:flex;gap:8px;z-index:99;box-shadow:0 -4px 20px rgba(0,52,102,0.12);
+  max-width:100%;flex-wrap:wrap;}
+.btn{padding:12px 16px;font-size:13px;font-weight:700;border-radius:var(--radius-sm);
+  text-align:center;white-space:nowrap;cursor:pointer;font-family:'DM Sans',sans-serif;border:none;flex:1;}
+.btn-pdf{background:var(--navy);color:white;}
+.btn-pdf:hover{background:var(--blue);}
+.btn-word{background:white;color:var(--navy);border:2px solid var(--navy)!important;}
+.btn-word:hover{background:var(--blue-pale);}
+.btn-drive{background:var(--green);color:white;}
+.btn-drive:hover{background:#006b47;}
+
+/* MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;
+  align-items:center;justify-content:center;padding:20px;}
+.modal-overlay.active{display:flex;}
+.modal-box{background:white;border-radius:var(--radius);padding:24px;max-width:420px;width:100%;
+  box-shadow:var(--shadow-lg);}
+.modal-box h3{font-size:16px;margin-bottom:8px;color:var(--navy);}
+.modal-box p{font-size:13px;color:var(--gray-mid);margin-bottom:16px;white-space:pre-line;line-height:1.6;}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;}
+.btn-primary{background:var(--navy);color:white;border:none;border-radius:var(--radius-sm);
+  padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;}
+
+/* TOAST */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--gray-dark);color:white;padding:10px 20px;border-radius:30px;
+  font-size:13px;font-weight:600;opacity:0;transition:all 0.3s;z-index:300;white-space:nowrap;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* TERMS */
+.terms-list{list-style:none;padding:0;}
+.terms-list li{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;font-size:13px;color:var(--gray-dark);}
+.terms-list li::before{content:'•';color:var(--blue);font-weight:700;flex-shrink:0;margin-top:1px;}
+.terms-editable{width:100%;padding:8px 10px;border:1.5px solid var(--gray-light);border-radius:6px;
+  font-size:13px;font-family:'DM Sans',sans-serif;background:var(--gray-pale);}
+.terms-editable:focus{outline:none;border-color:var(--blue);}
+
+/* PREFILL RETRY */
+.prefill-retry-btn{background:var(--blue-pale);border:1.5px solid var(--blue);color:var(--navy);
+  border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;
+  font-family:'DM Sans',sans-serif;white-space:nowrap;}
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <div class="header-top">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="logo-badge">BIOBLUE</div>
+      <div>
+        <a href="https://michaelhodnett2022-coder.github.io/bioblue-field-tools"
+          style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.12);
+          border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:4px 10px;
+          font-size:11px;font-weight:600;color:rgba(255,255,255,0.8);text-decoration:none;margin-bottom:4px;">
+          ← Field Tools
+        </a>
+        <div class="header-title">Quote Builder</div>
+        <div class="header-subtitle">AdBlue® Supply Quotation · Formal Proposal</div>
+      </div>
+    </div>
+    <button onclick="confirmClear()"
+      style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);
+      border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;
+      font-family:'DM Sans',sans-serif;">🗑️ Clear</button>
+  </div>
+  <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progressBar"></div></div>
+  <div class="progress-label" id="progressLabel">0% complete</div>
+</div>
+
+<div class="main-content">
+
+  <!-- CLIENT BANNER -->
+  <div class="client-banner" id="clientBanner">
+    <div style="font-size:20px;">🏢</div>
+    <div style="flex:1;">
+      <div style="font-size:11px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:0.5px;">Active Client</div>
+      <div style="font-size:14px;font-weight:700;color:#1f2937;" id="bannerClientName">Loading…</div>
+      <div style="font-size:11px;color:var(--gray-mid);" id="bannerClientId"></div>
+    </div>
+    <button id="prefillRetryBtn" class="prefill-retry-btn" style="display:none;"
+      onclick="fetchClientDetails(new URLSearchParams(window.location.search).get('client'))">
+      ↻ Load Details
+    </button>
+    <a href="https://michaelhodnett2022-coder.github.io/bioblue-field-tools"
+      style="font-size:11px;font-weight:600;color:var(--navy);text-decoration:none;
+      background:white;border:1.5px solid var(--blue);border-radius:6px;padding:5px 10px;">
+      Change
+    </a>
+  </div>
+  <div class="no-client-banner" id="noClientBanner">
+    <div style="font-size:20px;">⚠️</div>
+    <div style="flex:1;">
+      <div style="font-size:13px;font-weight:700;color:#92400e;">No client selected</div>
+      <div style="font-size:12px;color:#78350f;">Fill in client details below, or go back to Field Tools to select a client</div>
+    </div>
+    <a href="https://michaelhodnett2022-coder.github.io/bioblue-field-tools"
+      style="font-size:11px;font-weight:600;color:#92400e;text-decoration:none;
+      background:white;border:1.5px solid #f59e0b;border-radius:6px;padding:5px 10px;white-space:nowrap;">
+      ← Field Tools
+    </a>
+  </div>
+
+  <!-- SECTION 1: QUOTE SETUP -->
+  <div class="section-card">
+    <div class="section-header" onclick="toggleSection('s1')">
+      <div class="section-header-icon">⚙️</div>
+      <div class="section-header-text">
+        <h2>1. Quote Setup</h2>
+        <p>Quote number, date, BDM and client type</p>
+      </div>
+      <div class="section-toggle" id="toggle-s1">▼</div>
+    </div>
+    <div class="section-body" id="s1">
+
+      <div class="field-row three">
+        <div class="field-group">
+          <label class="field-label required">Date</label>
+          <input type="date" id="quoteDate" oninput="updateValidity();updateProgress()">
+        </div>
+        <div class="field-group">
+          <label class="field-label required">BDM</label>
+          <select id="bdmName" onchange="autoFillBDM(this.value);updateProgress()">
+            <option value="">— Select —</option>
+            <option>Michael Hodnett</option>
+            <option>Derek Page</option>
+            <option>Angelo Sayas</option>
+            <option>Kevin Goverd</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Valid For (days)</label>
+          <input type="number" id="validDays" value="30" min="1" max="365" oninput="updateValidity();updateProgress()">
+        </div>
+      </div>
+
+      <div class="field-group" style="margin-bottom:12px;">
+        <label class="field-label required">Quote Number</label>
+        <div class="quote-number-wrap">
+          <input type="text" id="quoteNumber" placeholder="Q-260617-001" oninput="updateProgress()">
+          <button class="regen-btn" onclick="generateQuoteNumber()">↻ Generate</button>
+        </div>
+      </div>
+
+      <div id="validityDisplay" class="validity-display" style="display:none;"></div>
+
+      <div style="margin-top:16px;">
+        <div class="field-label" style="margin-bottom:8px;">Client Type</div>
+        <div class="type-toggle">
+          <button class="type-btn active-new" id="typeNew" onclick="setClientType('new')">
+            🎯 New Prospect
+          </button>
+          <button class="type-btn" id="typeExisting" onclick="setClientType('existing')">
+            🤝 Existing Client
+          </button>
+        </div>
+        <div id="typeHint" style="font-size:11px;color:var(--gray-mid);margin-top:6px;">
+          New Prospect: standard "thank you for your interest" intro
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- SECTION 2: CLIENT DETAILS -->
+  <div class="section-card">
+    <div class="section-header" onclick="toggleSection('s2')">
+      <div class="section-header-icon">🏢</div>
+      <div class="section-header-text">
+        <h2>2. Client Details</h2>
+        <p>Auto-populated from Prospect record</p>
+      </div>
+      <div class="section-toggle" id="toggle-s2">▼</div>
+    </div>
+    <div class="section-body" id="s2">
+      <div class="field-row">
+        <div class="field-group">
+          <label class="field-label required">Company / Billing Entity</label>
+          <input type="text" id="companyName" placeholder="e.g. Wickhams Transport" oninput="updateProgress()">
+        </div>
+        <div class="field-group">
+          <label class="field-label required">Attention (Contact Name)</label>
+          <input type="text" id="contactName" placeholder="e.g. John Smith" oninput="updateProgress()">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <label class="field-label">Email</label>
+          <input type="email" id="contactEmail" placeholder="contact@company.com.au">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Phone</label>
+          <input type="tel" id="contactPhone" placeholder="+61 4XX XXX XXX">
+        </div>
+      </div>
+      <div class="field-row full">
+        <div class="field-group">
+          <label class="field-label">Site / Delivery Address</label>
+          <input type="text" id="siteAddress" placeholder="Street address, Suburb, State">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 3: BULK PRICING -->
+  <div class="section-card">
+    <div class="section-header" onclick="toggleSection('s3')">
+      <div class="section-header-icon">🚛</div>
+      <div class="section-header-text">
+        <h2>3. Bulk AdBlue® Pricing</h2>
+        <p>AUS32 bulk delivered — add one row per depot/site</p>
+      </div>
+      <div class="section-toggle" id="toggle-s3">▼</div>
+    </div>
+    <div class="section-body" id="s3">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <label style="font-size:12px;font-weight:600;color:var(--gray-mid);text-transform:uppercase;letter-spacing:0.4px;">
+          Include bulk pricing in quote?
+        </label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="includeBulk" checked onchange="toggleBulkSection()">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div id="bulkPricingArea">
+        <div class="pricing-table-wrap">
+          <table class="pricing-table">
+            <thead>
+              <tr>
+                <th style="width:28%;">Depot / Site</th>
+                <th style="width:20%;">Bulk CPL (¢/L)</th>
+                <th style="width:20%;">Freight CPL (¢/L)</th>
+                <th style="width:24%;">Delivered CPL (¢/L)</th>
+                <th style="width:8%;text-align:center;">✕</th>
+              </tr>
+            </thead>
+            <tbody id="bulkRows"></tbody>
+          </table>
+        </div>
+        <button class="add-row-btn" onclick="addBulkRow()">+ Add Site / Depot</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- SECTION 4: PACKAGED PRICING -->
+  <div class="section-card">
+    <div class="section-header" onclick="toggleSection('s4')">
+      <div class="section-header-icon">📦</div>
+      <div class="section-header-text">
+        <h2>4. Packaged AdBlue® Pricing</h2>
+        <p>IBC, drum, container and bottle pricing</p>
+      </div>
+      <div class="section-toggle" id="toggle-s4">▼</div>
+    </div>
+    <div class="section-body" id="s4">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <label style="font-size:12px;font-weight:600;color:var(--gray-mid);text-transform:uppercase;letter-spacing:0.4px;">
+          Include packaged pricing in quote?
+        </label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="includePackaged" onchange="togglePackagedSection()">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div id="packagedPricingArea" style="display:none;">
+        <div class="pricing-table-wrap">
+          <table class="pricing-table">
+            <thead>
+              <tr>
+                <th style="width:22%;">Depot / Site</th>
+                <th style="width:32%;">Product</th>
+                <th style="width:21%;">Unit Price ($/unit)</th>
+                <th style="width:17%;">Freight ($/pallet)</th>
+                <th style="width:8%;text-align:center;">✕</th>
+              </tr>
+            </thead>
+            <tbody id="packagedRows"></tbody>
+          </table>
+        </div>
+        <button class="add-row-btn" onclick="addPackagedRow()">+ Add Product</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- SECTION 5: TERMS & CLOSING -->
+  <div class="section-card">
+    <div class="section-header" onclick="toggleSection('s5')">
+      <div class="section-header-icon">📝</div>
+      <div class="section-header-text">
+        <h2>5. Terms & Closing</h2>
+        <p>Payment terms, closing comments and sign-off</p>
+      </div>
+      <div class="section-toggle" id="toggle-s5">▼</div>
+    </div>
+    <div class="section-body" id="s5">
+
+      <div class="field-group" style="margin-bottom:16px;">
+        <label class="field-label">Payment Terms</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+          <input class="terms-editable" id="term1" value="Standard payment terms are 21 days from Invoice.">
+          <input class="terms-editable" id="term2" value="Prices above are not inclusive of GST.">
+          <input class="terms-editable" id="term3" value="Prices above include delivery to the listed sites/depots.">
+          <input class="terms-editable" id="term4" placeholder="Add additional term (optional)">
+        </div>
+      </div>
+
+      <div class="field-group" style="margin-bottom:16px;">
+        <label class="field-label">Closing Comments</label>
+        <textarea id="closingComments" rows="4" oninput="updateProgress()"></textarea>
+      </div>
+
+      <div style="background:var(--blue-pale);border:1.5px solid var(--blue-light);border-radius:10px;padding:16px;">
+        <div style="font-size:11px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;">
+          BDM Sign-Off (auto-filled from BDM selection)
+        </div>
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">Name</label>
+            <input type="text" id="bdmSignName" placeholder="Michael Hodnett" oninput="updateProgress()">
+          </div>
+          <div class="field-group">
+            <label class="field-label">Title</label>
+            <input type="text" id="bdmSignTitle" value="Business Development Manager (WA)">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">Mobile</label>
+            <input type="tel" id="bdmSignMobile" placeholder="0427 670 726">
+          </div>
+          <div class="field-group">
+            <label class="field-label">Email</label>
+            <input type="email" id="bdmSignEmail" placeholder="michael.hodnett@bioblue.com.au">
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- end main-content -->
+
+<!-- STICKY FOOTER -->
+<div class="sticky-footer">
+  <button class="btn btn-pdf" onclick="downloadPDF()">📄 Download PDF</button>
+  <button class="btn btn-word" onclick="downloadWord()">📝 Download Word</button>
+  <button class="btn btn-drive" onclick="saveToDrive()">☁️ Save to Drive</button>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal">
+  <div class="modal-box">
+    <h3 id="modalTitle">✅ Done</h3>
+    <p id="modalMsg"></p>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="closeModal()">Close</button>
+      <button class="btn-primary" id="modalFieldToolsBtn" style="display:none;background:var(--blue);"
+        onclick="window.location.href='https://michaelhodnett2022-coder.github.io/bioblue-field-tools'">
+        ← Field Tools
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// =====================================================================
+// CONSTANTS
+// =====================================================================
+const GDRIVE_CLIENT_ID   = '49055725643-mlnqu8l92vmau83rnrk8imupiqvs03t1.apps.googleusercontent.com';
+const GDRIVE_FOLDER_NAME = 'BioBlue Audits';
+const CLIENT_RECORDS_NAME= 'BioBlue_Client_Records.xlsx';
+let gdriveToken = null;
+
+const BDMS = {
+  'Michael Hodnett': { email:'michael.hodnett@bioblue.com.au', mobile:'0427 670 726',  title:'Business Development Manager (WA)' },
+  'Derek Page':      { email:'derek.page@bioblue.com.au',      mobile:'+61 456 895 522',title:'Business Development Manager' },
+  'Angelo Sayas':    { email:'angelo.sayas@bioblue.com.au',    mobile:'+61 459 884 407',title:'Business Development Manager' },
+  'Kevin Goverd':    { email:'kevin.goverd@bioblue.com.au',    mobile:'0474 366 288',   title:'Business Development Manager' },
+};
+
+// Bulk — single product code, multiple sites each with own CPL rates
+const BULK_PRODUCT = { code:'BB-ADB-Bulk', desc:'Bulk AdBlue® (BioBlue Delivered)' };
+
+// Packaged — exact match to Site Admin form
+const PKG_PRODUCTS = [
+  { code:'BB-ADB-1000', desc:'AdBlue® 1,000L IBC' },
+  { code:'BB-ADB-210',  desc:'AdBlue® 210L drum' },
+  { code:'BB-ADB-20',   desc:'AdBlue® 20L container' },
+  { code:'BB-ADB-15',   desc:'AdBlue® 15L container' },
+  { code:'BB-ADB-10',   desc:'AdBlue® 10L container' },
+  { code:'BB-ADB-01',   desc:'AdBlue® 1L bottle' },
+  { code:'OTHER',       desc:'Other product / special pricing' },
+];
+
+let clientType = 'new'; // 'new' | 'existing'
+
+// =====================================================================
+// INIT
+// =====================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('quoteDate').value = today;
+  generateQuoteNumber();
+  updateValidity();
+  addBulkRow();
+  autoFillBDM('Michael Hodnett');
+  document.getElementById('bdmName').value = 'Michael Hodnett';
+  updateClosingComments();
+  loadClientFromURL();
+  updateProgress();
+});
+
+// =====================================================================
+// QUOTE NUMBER
+// =====================================================================
+function generateQuoteNumber() {
+  const now = new Date();
+  const yy  = String(now.getFullYear()).slice(2);
+  const mm  = String(now.getMonth()+1).padStart(2,'0');
+  const dd  = String(now.getDate()).padStart(2,'0');
+  const rnd = String(Math.floor(Math.random()*900)+100);
+  document.getElementById('quoteNumber').value = `Q-${yy}${mm}${dd}-${rnd}`;
+  updateProgress();
+}
+
+// =====================================================================
+// VALIDITY
+// =====================================================================
+function updateValidity() {
+  const dateVal  = document.getElementById('quoteDate').value;
+  const days     = parseInt(document.getElementById('validDays').value) || 30;
+  const display  = document.getElementById('validityDisplay');
+  if (!dateVal) { display.style.display = 'none'; return; }
+  const expiry   = new Date(dateVal);
+  expiry.setDate(expiry.getDate() + days);
+  const expiryStr= expiry.toLocaleDateString('en-AU', { day:'2-digit', month:'long', year:'numeric' });
+  display.style.display = 'block';
+  display.textContent = `📅 This quote is valid for ${days} days — expires ${expiryStr}`;
+}
+
+// =====================================================================
+// CLIENT TYPE
+// =====================================================================
+function setClientType(type) {
+  clientType = type;
+  document.getElementById('typeNew').className      = 'type-btn' + (type==='new' ? ' active-new' : '');
+  document.getElementById('typeExisting').className = 'type-btn' + (type==='existing' ? ' active-existing' : '');
+  document.getElementById('typeHint').textContent   = type === 'new'
+    ? 'New Prospect: standard "thank you for your interest" intro'
+    : 'Existing Client: includes "thank you for your ongoing support" paragraph';
+  updateClosingComments();
+}
+
+// =====================================================================
+// BDM AUTO-FILL
+// =====================================================================
+function autoFillBDM(name) {
+  const b = BDMS[name];
+  if (!b) return;
+  document.getElementById('bdmSignName').value  = name;
+  document.getElementById('bdmSignTitle').value = b.title;
+  document.getElementById('bdmSignMobile').value= b.mobile;
+  document.getElementById('bdmSignEmail').value = b.email;
+  updateClosingComments();
+  updateProgress();
+}
+
+// =====================================================================
+// CLOSING COMMENTS (auto-generated, editable)
+// =====================================================================
+function updateClosingComments() {
+  const bdmName  = document.getElementById('bdmSignName').value || 'Michael Hodnett';
+  const bdmMobile= document.getElementById('bdmSignMobile').value || '0427 670 726';
+  const bdmEmail = document.getElementById('bdmSignEmail').value || 'michael.hodnett@bioblue.com.au';
+  const existing = document.getElementById('closingComments').value;
+  // Only auto-fill if empty
+  if (!existing.trim()) {
+    document.getElementById('closingComments').value =
+      `If you have any questions regarding our AdBlue® supply or storage tank solutions, please do not hesitate to contact me directly on my mobile at ${bdmMobile} or via email at ${bdmEmail}.\n\nOnce again thank you for your time, I hope this supply quotation is satisfactory and we can forge a productive business relationship together.`;
+  }
+}
+
+// =====================================================================
+// PRICING ROWS — BULK
+// =====================================================================
+let bulkRowCount = 0;
+function addBulkRow(depot='', bulkCpl='', freightCpl='') {
+  bulkRowCount++;
+  const id = 'br' + bulkRowCount;
+  const tr = document.createElement('tr');
+  tr.id = id;
+  tr.innerHTML = `
+    <td><input type="text" placeholder="e.g. Hazelmere Depot" value="${depot}" oninput="updateProgress()"></td>
+    <td>
+      <div style="position:relative;">
+        <input type="text" id="${id}_bulk" placeholder="e.g. 65" value="${bulkCpl}"
+          oninput="calcBulkDelivered('${id}');updateProgress()" style="padding-right:30px;text-align:right;">
+        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">¢/L</span>
+      </div>
+    </td>
+    <td>
+      <div style="position:relative;">
+        <input type="text" id="${id}_freight" placeholder="e.g. 8" value="${freightCpl}"
+          oninput="calcBulkDelivered('${id}');updateProgress()" style="padding-right:30px;text-align:right;">
+        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">¢/L</span>
+      </div>
+    </td>
+    <td>
+      <div style="position:relative;">
+        <input type="text" id="${id}_delivered" placeholder="—" readonly
+          style="padding-right:30px;text-align:right;background:#f0f4f8;color:var(--navy);font-weight:700;cursor:default;">
+        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">¢/L</span>
+      </div>
+    </td>
+    <td style="text-align:center;">
+      <button class="remove-row-btn" onclick="removeRow('${id}')">×</button>
+    </td>`;
+  document.getElementById('bulkRows').appendChild(tr);
+  if (bulkCpl || freightCpl) calcBulkDelivered(id);
+  updateProgress();
+}
+
+function calcBulkDelivered(id) {
+  const bulk    = parseFloat(document.getElementById(id+'_bulk')?.value) || 0;
+  const freight = parseFloat(document.getElementById(id+'_freight')?.value) || 0;
+  const dlvEl   = document.getElementById(id+'_delivered');
+  if (dlvEl) dlvEl.value = (bulk + freight > 0) ? (bulk + freight).toFixed(2) : '';
+}
+
+// =====================================================================
+// PRICING ROWS — PACKAGED
+// =====================================================================
+let pkgRowCount = 0;
+function addPackagedRow(depot='', code='', unitPrice='', freightPrice='') {
+  pkgRowCount++;
+  const id = 'pr' + pkgRowCount;
+  const codeOptions = PKG_PRODUCTS.map(p =>
+    `<option value="${p.code}" data-desc="${p.desc}" ${p.code===code?'selected':''}>${p.code} — ${p.desc}</option>`
+  ).join('');
+  const tr = document.createElement('tr');
+  tr.id = id;
+  tr.innerHTML = `
+    <td><input type="text" placeholder="e.g. Hazelmere Site" value="${depot}"></td>
+    <td>
+      <select id="${id}_code" onchange="updateProgress()" style="font-size:12px;">
+        <option value="">— Select product —</option>
+        ${codeOptions}
+      </select>
+    </td>
+    <td>
+      <div style="position:relative;">
+        <input type="text" id="${id}_unit" placeholder="e.g. 45.00" value="${unitPrice}"
+          style="padding-left:18px;text-align:right;" oninput="updateProgress()">
+        <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">$</span>
+      </div>
+    </td>
+    <td>
+      <div style="position:relative;">
+        <input type="text" id="${id}_freight" placeholder="e.g. 35.00" value="${freightPrice}"
+          style="padding-left:18px;text-align:right;">
+        <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">$</span>
+      </div>
+    </td>
+    <td style="text-align:center;">
+      <button class="remove-row-btn" onclick="removeRow('${id}')">×</button>
+    </td>`;
+  document.getElementById('packagedRows').appendChild(tr);
+}
+
+function removeRow(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+  updateProgress();
+}
+
+// =====================================================================
+// SECTION TOGGLES
+// =====================================================================
+function toggleBulkSection() {
+  const show = document.getElementById('includeBulk').checked;
+  document.getElementById('bulkPricingArea').style.display = show ? 'block' : 'none';
+}
+function togglePackagedSection() {
+  const show = document.getElementById('includePackaged').checked;
+  document.getElementById('packagedPricingArea').style.display = show ? 'block' : 'none';
+  if (show && document.getElementById('packagedRows').children.length === 0) addPackagedRow();
+}
+function toggleSection(id) {
+  const b = document.getElementById(id), t = document.getElementById('toggle-'+id);
+  if (!b) return;
+  const c = b.classList.toggle('collapsed');
+  if (t) t.textContent = c ? '▶' : '▼';
+}
+
+// =====================================================================
+// COLLECT DATA
+// =====================================================================
+function collectData() {
+  const g = id => document.getElementById(id)?.value?.trim() || '';
+
+  // Bulk rows — depot + bulkCpl + freightCpl + deliveredCpl
+  const bulkRows = [];
+  document.querySelectorAll('#bulkRows tr').forEach(tr => {
+    const depot     = tr.querySelector('input[type="text"]')?.value?.trim() || '';
+    const bulkCpl   = document.getElementById(tr.id+'_bulk')?.value?.trim() || '';
+    const freightCpl= document.getElementById(tr.id+'_freight')?.value?.trim() || '';
+    const delivered = document.getElementById(tr.id+'_delivered')?.value?.trim() || '';
+    if (depot || bulkCpl) bulkRows.push({ depot, bulkCpl, freightCpl, delivered });
+  });
+
+  // Packaged rows — depot + code + desc + unitPrice + freightPrice
+  const pkgRows = [];
+  document.querySelectorAll('#packagedRows tr').forEach(tr => {
+    const depot    = tr.querySelector('input[type="text"]')?.value?.trim() || '';
+    const sel      = tr.querySelector('select');
+    const code     = sel?.value?.trim() || '';
+    const opt      = sel?.options[sel?.selectedIndex];
+    const desc     = opt?.getAttribute('data-desc') || '';
+    const unitPrice   = document.getElementById(tr.id+'_unit')?.value?.trim() || '';
+    const freightPrice= document.getElementById(tr.id+'_freight')?.value?.trim() || '';
+    if (depot || code) pkgRows.push({ depot, code, desc, unitPrice, freightPrice });
+  });
+
+  return {
+    quoteDate:       g('quoteDate'),
+    quoteNumber:     g('quoteNumber'),
+    validDays:       g('validDays') || '30',
+    bdmName:         g('bdmName'),
+    clientType,
+    companyName:     g('companyName'),
+    contactName:     g('contactName'),
+    contactEmail:    g('contactEmail'),
+    contactPhone:    g('contactPhone'),
+    siteAddress:     g('siteAddress'),
+    includeBulk:     document.getElementById('includeBulk').checked,
+    includePackaged: document.getElementById('includePackaged').checked,
+    bulkRows,
+    pkgRows,
+    term1:           g('term1'),
+    term2:           g('term2'),
+    term3:           g('term3'),
+    term4:           g('term4'),
+    closingComments: g('closingComments'),
+    bdmSignName:     g('bdmSignName'),
+    bdmSignTitle:    g('bdmSignTitle'),
+    bdmSignMobile:   g('bdmSignMobile'),
+    bdmSignEmail:    g('bdmSignEmail'),
+  };
+}
+
+// =====================================================================
+// PROGRESS
+// =====================================================================
+function updateProgress() {
+  const d = collectData();
+  const checks = [
+    !!d.quoteDate,
+    !!d.quoteNumber,
+    !!d.bdmName,
+    !!d.companyName,
+    !!d.contactName,
+    (d.includeBulk && d.bulkRows.length > 0) || d.includePackaged,
+  ];
+  const done = checks.filter(Boolean).length;
+  const pct  = Math.round((done / checks.length) * 100);
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressLabel').textContent = pct + '% complete';
+}
+
+// =====================================================================
+// PDF GENERATION (jsPDF)
+// =====================================================================
+async function generatePDF(returnDoc = false) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+  const d   = collectData();
+  const margin=18, pageW=210, cW=pageW-margin*2;
+  let y = margin;
+
+  const NAVY   = [0, 52, 102];
+  const BLUE   = [0, 85, 165];
+  const GRAY   = [108, 117, 125];
+  const GRAY_L = [240, 242, 244];
+  const WHITE  = [255, 255, 255];
+  const BLACK  = [30, 40, 50];
+
+  function chk(n=25) { if(y+n>280){doc.addPage();y=margin;} }
+  function txt(text, x, fy, opts) { doc.text(text, x, fy, opts); }
+
+  // ── FOOTER (drawn on each page via event) ──────────────────────
+  function addPageFooter() {
+    const totalPages = doc.internal.getNumberOfPages();
+    for (let i=1; i<=totalPages; i++) {
+      doc.setPage(i);
+      // Bottom bar
+      doc.setFillColor(...NAVY);
+      doc.rect(0, 287, 210, 10, 'F');
+      doc.setFillColor(...BLUE);
+      doc.rect(0, 285, 210, 2, 'F');
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(7);
+      doc.setTextColor(...WHITE);
+      doc.text('www.bioblue.com.au', margin, 291);
+      // BioBlue logo text in footer
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(9);
+      doc.text('Bio', pageW-margin-20, 291);
+      const bw = doc.getTextWidth('Bio');
+      doc.setTextColor(100, 210, 255);
+      doc.text('Blue', pageW-margin-20+bw, 291);
+    }
+  }
+
+  // ── PAGE 1: LETTER ─────────────────────────────────────────────
+
+  // Logo (top left)
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(32);
+  doc.setTextColor(...NAVY);
+  doc.text('Bio', margin, y+10);
+  const bioW = doc.getTextWidth('Bio');
+  doc.setTextColor(...BLUE);
+  doc.text('Blue', margin+bioW, y+10);
+
+  // Address block (top right)
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(...GRAY);
+  ['180a Cavan Road','DRY CREEK 5094 SA','ABN 18 642 169 051','','1300 211 007','sales@bioblue.com.au']
+    .forEach((line,i) => doc.text(line, pageW-margin, y+2+i*4, {align:'right'}));
+  y += 22;
+
+  // Divider
+  doc.setDrawColor(...BLUE);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, pageW-margin, y);
+  y += 8;
+
+  // Client details table
+  const tData = [
+    ['Company',   d.companyName||'—',   'Date',    d.quoteDate ? new Date(d.quoteDate+'T12:00:00').toLocaleDateString('en-AU') : '—'],
+    ['Attention', d.contactName||'—',   'Quote #', d.quoteNumber||'—'],
+    ['Email',     d.contactEmail||'—',  '',        ''],
+    ['Phone',     d.contactPhone||'—',  '',        ''],
+  ];
+  const rh=7, c1=20, c2=66, c3=22, c4=62;
+  tData.forEach((row, ri) => {
+    const ry = y + ri*rh;
+    doc.setFillColor(...GRAY_L);
+    doc.rect(margin, ry, c1+c2+c3+c4, rh, 'F');
+    if (ri===0) { doc.setDrawColor(200,212,220); doc.setLineWidth(0.3); doc.rect(margin,ry,c1+c2+c3+c4,rh*4,'S'); }
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...NAVY);
+    doc.text(row[0], margin+2, ry+4.8);
+    if(row[2]) doc.text(row[2], margin+c1+c2+2, ry+4.8);
+    doc.setFont('helvetica','normal'); doc.setTextColor(...BLACK);
+    const v1lines = doc.splitTextToSize(row[1], c2-4);
+    doc.text(v1lines[0], margin+c1+2, ry+4.8);
+    if(row[3]) doc.text(row[3], margin+c1+c2+c3+2, ry+4.8);
+  });
+  y += tData.length*rh + 12;
+
+  // Greeting
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...BLACK);
+  doc.text(`Hi ${d.contactName || 'there'},`, margin, y); y += 8;
+
+  // Body paragraphs
+  const paras = [];
+  paras.push('Thank you for your interest in AdBlue\u00ae supply by BioBlue. Please see our formal quotation for VDA Certified AdBlue\u00ae supply below.');
+  if (d.clientType === 'existing') paras.push('Thank you for your ongoing support as one of our valued business partners.');
+  paras.push('Our company\'s focus is firmly on our customers, striving to provide the most reliable supply and leading customer service in the Australian AdBlue\u00ae market. BioBlue is a VDA certified AdBlue\u00ae manufacturer compliant with ISO22241 quality assurance requirements. VDA Certificate No. 0004706.');
+  // Validity
+  const expiry = new Date(d.quoteDate + 'T12:00:00'); expiry.setDate(expiry.getDate()+(parseInt(d.validDays)||30));
+  const expiryStr = expiry.toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'});
+  paras.push(`This quote is valid for ${d.validDays||'30'} days from the date of issue (until ${expiryStr}). Please do not hesitate to contact us with any questions regarding your AdBlue\u00ae supply needs or the information in this quote.`);
+
+  paras.forEach(para => {
+    chk(20);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...BLACK);
+    const lines = doc.splitTextToSize(para, cW);
+    doc.text(lines, margin, y);
+    y += lines.length*5.2+5;
+  });
+
+  // ── PAGE 2: PRICING ─────────────────────────────────────────────
+  doc.addPage(); y = margin;
+
+  function secHdr(title) {
+    chk(12);
+    doc.setFillColor(...NAVY); doc.rect(margin, y, cW, 8.5, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...WHITE);
+    doc.text(title, margin+3, y+5.8);
+    y += 12;
+  }
+
+  function tableHdr(cols) {
+    chk(8);
+    const totalW = cols.reduce((s,c)=>s+c.w,0);
+    doc.setFillColor(...NAVY);
+    doc.rect(margin, y, totalW, 7, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...WHITE);
+    let cx = margin;
+    cols.forEach(col => { doc.text(col.label, cx+2, y+4.8); cx+=col.w; });
+    y += 7;
+  }
+
+  function tableRow(cols, values, shade) {
+    chk(7);
+    const totalW = cols.reduce((s,c)=>s+c.w,0);
+    if(shade){ doc.setFillColor(...GRAY_L); doc.rect(margin, y, totalW, 7, 'F'); }
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...BLACK);
+    let cx = margin;
+    cols.forEach((col,i) => {
+      const val = values[i]||'—';
+      const lines = doc.splitTextToSize(val, col.w-4);
+      doc.text(lines[0], cx+2, y+4.8);
+      cx += col.w;
+    });
+    doc.setDrawColor(220,228,235); doc.setLineWidth(0.2);
+    doc.line(margin, y+7, margin+totalW, y+7);
+    y += 7;
+  }
+
+  // Bulk pricing table
+  if (d.includeBulk && d.bulkRows.length > 0) {
+    secHdr('BIOBLUE BULK ADBLUE\u00ae SUPPLY PROPOSAL');
+    const bCols = [
+      {label:'Depot / Site',          w:44},
+      {label:'Product',               w:52},
+      {label:'Bulk CPL (¢/L)',        w:28},
+      {label:'Freight CPL (¢/L)',     w:30},
+      {label:'Delivered CPL (ex GST)',w:cW-154},
+    ];
+    tableHdr(bCols);
+    d.bulkRows.forEach((row, i) => {
+      tableRow(bCols, [
+        row.depot,
+        BULK_PRODUCT.desc,
+        row.bulkCpl   ? row.bulkCpl+'¢'   : '—',
+        row.freightCpl? row.freightCpl+'¢' : '—',
+        row.delivered ? row.delivered+'¢'  : '—',
+      ], i%2===1);
+    });
+    y += 6;
+  }
+
+  // Packaged pricing table
+  if (d.includePackaged && d.pkgRows.length > 0) {
+    chk(20);
+    secHdr('BIOBLUE PACKAGED ADBLUE\u00ae SUPPLY PROPOSAL');
+    const pCols = [
+      {label:'Depot / Site',       w:38},
+      {label:'Product Code',       w:34},
+      {label:'Description',        w:52},
+      {label:'Unit Price (ex GST)',w:30},
+      {label:'Freight ($/pallet)', w:cW-154},
+    ];
+    tableHdr(pCols);
+    d.pkgRows.forEach((row, i) => {
+      tableRow(pCols, [
+        row.depot,
+        row.code,
+        row.desc,
+        row.unitPrice   ? '$'+row.unitPrice   : '—',
+        row.freightPrice? '$'+row.freightPrice : '—',
+      ], i%2===1);
+    });
+    y += 6;
+  }
+
+  // Billing & Payment Terms
+  chk(30);
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...NAVY);
+  doc.text('Billing & Payment Terms', margin, y); y += 7;
+  const terms = [d.term1, d.term2, d.term3, d.term4].filter(Boolean);
+  terms.forEach(term => {
+    chk(7);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...BLACK);
+    doc.setFillColor(...BLUE); doc.circle(margin+2.5, y-1, 1, 'F');
+    const lines = doc.splitTextToSize(term, cW-8);
+    doc.text(lines, margin+7, y);
+    y += lines.length*4.5+3;
+  });
+  y += 4;
+
+  // Closing comments
+  if (d.closingComments) {
+    chk(20);
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...NAVY);
+    doc.text('Closing Comments', margin, y); y += 7;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...BLACK);
+    const closeLines = doc.splitTextToSize(d.closingComments, cW);
+    closeLines.forEach(line => { chk(6); doc.text(line, margin, y); y += 5; });
+    y += 6;
+  }
+
+  // Sign-off
+  chk(30);
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...BLACK);
+  doc.text('Kindest Regards,', margin, y); y += 10;
+  doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  doc.text(d.bdmSignName||'Michael Hodnett', margin, y); y += 5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...GRAY);
+  doc.text(d.bdmSignTitle||'Business Development Manager (WA)', margin, y); y += 5;
+  doc.text(`Mobile: ${d.bdmSignMobile}`, margin, y); y += 5;
+  doc.text(`Email: ${d.bdmSignEmail}`, margin, y);
+
+  // Footer on all pages
+  addPageFooter();
+
+  if (returnDoc) return doc;
+  const baseName = `BioBlue_Quote_${(d.companyName||'Client').replace(/\s+/g,'_')}_${d.quoteNumber||'Q'}`;
+  doc.save(baseName + '.pdf');
+  showToast('✅ PDF downloaded');
+}
+
+// =====================================================================
+// WORD DOCUMENT — styled HTML → .docx via html-docx-js
+// =====================================================================
+function buildQuoteHTML(d) {
+  const expiryDate = (() => {
+    try {
+      const e = new Date(d.quoteDate + 'T12:00:00');
+      e.setDate(e.getDate() + parseInt(d.validDays||30));
+      return e.toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'});
+    } catch(e){ return ''; }
+  })();
+
+  const bulkTableRows = d.bulkRows.map(r => `
+    <tr>
+      <td style="border:1px solid #ccc;padding:6px 8px;">${r.depot||'—'}</td>
+      <td style="border:1px solid #ccc;padding:6px 8px;">${BULK_PRODUCT.desc}</td>
+      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;">${r.bulkCpl ? r.bulkCpl+'¢' : '—'}</td>
+      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;">${r.freightCpl ? r.freightCpl+'¢' : '—'}</td>
+      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;font-weight:bold;">${r.delivered ? r.delivered+'¢' : '—'}</td>
+    </tr>`).join('');
+
+  const pkgTableRows = d.pkgRows.map(r => `
+    <tr>
+      <td style="border:1px solid #ccc;padding:6px 8px;">${r.depot||'—'}</td>
+      <td style="border:1px solid #ccc;padding:6px 8px;">${r.code||'—'}</td>
+      <td style="border:1px solid #ccc;padding:6px 8px;">${r.desc||'—'}</td>
+      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;">${r.unitPrice ? '$'+r.unitPrice : '—'}</td>
+      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;">${r.freightPrice ? '$'+r.freightPrice : '—'}</td>
+    </tr>`).join('');
+
+  const terms = [d.term1, d.term2, d.term3, d.term4].filter(Boolean)
+    .map(t => `<li style="margin-bottom:6px;">${t}</li>`).join('');
+
+  const closingParas = (d.closingComments||'')
+    .split('\n\n').filter(Boolean)
+    .map(p => `<p style="margin:0 0 10px;">${p.replace(/\n/g,'<br>')}</p>`).join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8">
+<style>
+  body { font-family: Arial, sans-serif; font-size: 11pt; color: #1e2a38; margin: 2cm; }
+  .logo-bio { font-size: 28pt; font-weight: bold; color: #003466; }
+  .logo-blue { font-size: 28pt; font-weight: bold; color: #0055a5; }
+  .address-block { text-align: right; font-size: 8pt; color: #6b7280; line-height: 1.6; }
+  .divider { border: none; border-top: 2px solid #0055a5; margin: 12px 0 16px; }
+  .client-table { width: 100%; border-collapse: collapse; background: #f0f4f8; margin-bottom: 20px; }
+  .client-table td { padding: 7px 10px; font-size: 10pt; border: 1px solid #d1d5db; }
+  .client-table .lbl { font-weight: bold; color: #003466; width: 80px; }
+  .section-title { font-size: 12pt; font-weight: bold; color: #003466; margin: 20px 0 10px; border-bottom: 1px solid #003466; padding-bottom: 4px; }
+  .pricing-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  .pricing-table th { background: #003466; color: white; padding: 8px 10px; font-size: 9pt; text-align: left; }
+  .pricing-table td { border: 1px solid #d1d5db; padding: 7px 10px; font-size: 10pt; }
+  .pricing-table tr:nth-child(even) td { background: #f0f4f8; }
+  .terms-list { padding-left: 20px; }
+  .terms-list li { margin-bottom: 6px; }
+  .signature { margin-top: 24px; }
+  .sig-name { font-weight: bold; font-size: 11pt; color: #003466; }
+  .sig-detail { font-size: 10pt; color: #6b7280; }
+</style>
+</head>
+<body>
+
+<table style="width:100%;margin-bottom:16px;"><tr>
+  <td><span class="logo-bio">Bio</span><span class="logo-blue">Blue</span></td>
+  <td class="address-block">180a Cavan Road<br>DRY CREEK 5094 SA<br>ABN 18 642 169 051<br><br>1300 211 007<br>sales@bioblue.com.au</td>
+</tr></table>
+<hr class="divider">
+
+<table class="client-table">
+  <tr>
+    <td class="lbl">Company</td><td>${d.companyName||''}</td>
+    <td class="lbl">Date</td><td>${d.quoteDate ? new Date(d.quoteDate+'T12:00:00').toLocaleDateString('en-AU') : ''}</td>
+  </tr>
+  <tr>
+    <td class="lbl">Attention</td><td>${d.contactName||''}</td>
+    <td class="lbl">Quote #</td><td>${d.quoteNumber||''}</td>
+  </tr>
+  <tr><td class="lbl">Email</td><td colspan="3">${d.contactEmail||''}</td></tr>
+  <tr><td class="lbl">Phone</td><td colspan="3">${d.contactPhone||''}</td></tr>
+</table>
+
+<p>Hi ${d.contactName||'there'},</p>
+<p>Thank you for your interest in AdBlue&reg; supply by BioBlue. Please see our formal quotation for VDA Certified AdBlue&reg; supply below.</p>
+${d.clientType==='existing' ? '<p>Thank you for your ongoing support as one of our valued business partners.</p>' : ''}
+<p>Our company&rsquo;s focus is firmly on our customers, striving to provide the most reliable supply and leading customer service in the Australian AdBlue&reg; market. BioBlue is a VDA certified AdBlue&reg; manufacturer compliant with ISO22241 quality assurance requirements. VDA Certificate No. 0004706.</p>
+<p>This quote is valid for ${d.validDays||'30'} days from the date of issue${expiryDate ? ' (until '+expiryDate+')' : ''}. Please do not hesitate to contact us with any questions regarding your AdBlue&reg; supply needs or the information in this quote.</p>
+
+${d.includeBulk && d.bulkRows.length>0 ? `
+<div class="section-title">BioBlue Bulk AdBlue&reg; Supply Proposal</div>
+<table class="pricing-table">
+  <thead><tr>
+    <th>Depot / Site</th><th>Product</th><th>Bulk CPL (¢/L)</th><th>Freight CPL (¢/L)</th><th>Delivered CPL (ex GST)</th>
+  </tr></thead>
+  <tbody>${bulkTableRows}</tbody>
+</table>` : ''}
+
+${d.includePackaged && d.pkgRows.length>0 ? `
+<div class="section-title">BioBlue Packaged AdBlue&reg; Supply Proposal</div>
+<table class="pricing-table">
+  <thead><tr>
+    <th>Depot / Site</th><th>Product Code</th><th>Description</th><th>Unit Price (ex GST)</th><th>Freight ($/pallet)</th>
+  </tr></thead>
+  <tbody>${pkgTableRows}</tbody>
+</table>` : ''}
+
+<div class="section-title">Billing &amp; Payment Terms</div>
+<ul class="terms-list">${terms}</ul>
+
+${d.closingComments ? `<div class="section-title">Closing Comments</div>${closingParas}` : ''}
+
+<div class="signature" style="margin-top:28px;">
+<p>Kindest Regards,</p>
+<p class="sig-name">${d.bdmSignName||'Michael Hodnett'}</p>
+<p class="sig-detail">${d.bdmSignTitle||'Business Development Manager (WA)'}</p>
+<p class="sig-detail">Mobile: ${d.bdmSignMobile||''}</p>
+<p class="sig-detail">Email: ${d.bdmSignEmail||''}</p>
+</div>
+
+</body></html>`;
+}
+
+async function downloadWord() {
+  const d = collectData();
+  if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
+  showToast('⏳ Generating Word document…');
+  try {
+    if (typeof htmlDocx === 'undefined') { showToast('⚠️ Word library not loaded — try again in a moment'); return; }
+    const html = buildQuoteHTML(d);
+    const blob = htmlDocx.asBlob(html, { orientation: 'portrait', margins: { top: 1000, right: 1000, bottom: 1000, left: 1000 } });
+    const baseName = `BioBlue_Quote_${d.companyName.replace(/\s+/g,'_')}_${d.quoteNumber||'Q'}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = baseName + '.docx';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    showToast('✅ Word document downloaded');
+  } catch(e) {
+    showToast('⚠️ Word generation failed: ' + e.message);
+    console.error(e);
+  }
+}
+
+async function downloadPDF() {
+  const d = collectData();
+  if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
+  showToast('⏳ Generating PDF…');
+  try { await generatePDF(false); }
+  catch(e) { showToast('⚠️ PDF failed: ' + e.message); }
+}
+
+// =====================================================================
+// DRIVE — save PDF to client folder
+// =====================================================================
+async function saveToDrive() {
+  const d = collectData();
+  if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
+  const clientId = new URLSearchParams(window.location.search).get('client');
+  showToast('☁️ Connecting to Google…');
+  try {
+    await getDriveToken();
+    const folderId    = await getFolderId();
+    const clientFolderName = d.companyName;
+    const clientFolderId   = clientId
+      ? await getClientFolderFromRecord(folderId, clientId, clientFolderName)
+      : await getOrCreateClientFolder(folderId, clientFolderName);
+    const pdfDoc  = await generatePDF(true);
+    const pdfBlob = pdfDoc.output('blob');
+    const baseName = `BioBlue_Quote_${d.companyName.replace(/\s+/g,'_')}_${d.quoteNumber||'Q'}`;
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify({ name: baseName+'.pdf', parents:[clientFolderId] })], {type:'application/json'}));
+    form.append('file', pdfBlob, baseName+'.pdf');
+    const up = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+      { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}` }, body:form });
+    const upr = await up.json();
+    const link = upr.webViewLink || '';
+    document.getElementById('modalTitle').textContent = '✅ Quote Saved';
+    document.getElementById('modalMsg').textContent = `Quote saved to Google Drive.\n\n📄 ${baseName}.pdf${link ? '\n\n' + link : ''}`;
+    document.getElementById('modalFieldToolsBtn').style.display = clientId ? 'inline-block' : 'none';
+    document.getElementById('modal').classList.add('active');
+    showToast('✅ Quote saved to Drive!');
+  } catch(e) {
+    gdriveToken = null;
+    showToast('⚠️ Drive save failed: ' + e.message);
+  }
+}
+
+// =====================================================================
+// DRIVE HELPERS (same pattern as other forms)
+// =====================================================================
+async function getDriveToken() {
+  if (gdriveToken) return;
+  let _waited = 0;
+  while ((typeof google==='undefined'||!google?.accounts?.oauth2) && _waited<5000) {
+    await new Promise(r=>setTimeout(r,100)); _waited+=100;
+  }
+  await new Promise((resolve,reject) => {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: GDRIVE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      callback: r => { if(r.access_token){gdriveToken=r.access_token;resolve();}else reject(new Error(r.error||'Sign-in failed')); },
+      error_callback: e => reject(new Error(e.message||'Sign-in failed'))
+    });
+    client.requestAccessToken({ prompt:'' });
+  });
+}
+
+async function getFolderId() {
+  const fr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${GDRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
+    { headers:{ Authorization:`Bearer ${gdriveToken}` } });
+  const fd = await fr.json();
+  if (fd.files && fd.files.length) return fd.files[0].id;
+  const cr = await fetch('https://www.googleapis.com/drive/v3/files',
+    { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ name:GDRIVE_FOLDER_NAME, mimeType:'application/vnd.google-apps.folder' }) });
+  return (await cr.json()).id;
+}
+
+async function getOrCreateClientFolder(parentId, name) {
+  const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
+    { headers:{ Authorization:`Bearer ${gdriveToken}` } });
+  const sd = await sr.json();
+  if (sd.files && sd.files.length) return sd.files[0].id;
+  const cr = await fetch('https://www.googleapis.com/drive/v3/files',
+    { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}`,'Content-Type':'application/json' },
+      body: JSON.stringify({ name, mimeType:'application/vnd.google-apps.folder', parents:[parentId] }) });
+  return (await cr.json()).id;
+}
+
+async function getClientFolderFromRecord(rootFolderId, clientId, fallback) {
+  try {
+    const fileId = await getAdminSheetId(rootFolderId);
+    if (!fileId) return await getOrCreateClientFolder(rootFolderId, fallback);
+    const dl   = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,{headers:{Authorization:`Bearer ${gdriveToken}`}});
+    const ab   = await dl.arrayBuffer();
+    const wb   = XLSX.read(new Uint8Array(ab),{type:'array'});
+    const ws   = wb.Sheets['Client Records'];
+    const rows = XLSX.utils.sheet_to_json(ws,{header:1});
+    const hdrs = rows[0]||[];
+    const idCol  = hdrs.indexOf('Client ID');
+    const folCol = hdrs.indexOf('Drive Folder ID');
+    const row    = rows.slice(1).find(r => r[idCol]===clientId);
+    if (row && row[folCol]) return row[folCol];
+  } catch(e) { console.warn('Folder lookup failed:',e.message); }
+  if (fallback) return await getOrCreateClientFolder(rootFolderId, fallback);
+  return rootFolderId;
+}
+
+let _adminSheetIdCache = null;
+async function getAdminSheetId(rootFolderId) {
+  if (_adminSheetIdCache) return _adminSheetIdCache;
+  const afr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='AA_App_Admin' and '${rootFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,{headers:{Authorization:`Bearer ${gdriveToken}`}});
+  const afd = await afr.json();
+  let adminFolderId;
+  if (afd.files && afd.files.length) { adminFolderId = afd.files[0].id; }
+  else {
+    const cr = await fetch('https://www.googleapis.com/drive/v3/files',{method:'POST',headers:{Authorization:`Bearer ${gdriveToken}`,'Content-Type':'application/json'},body:JSON.stringify({name:'AA_App_Admin',mimeType:'application/vnd.google-apps.folder',parents:[rootFolderId]})});
+    adminFolderId = (await cr.json()).id;
+  }
+  const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${CLIENT_RECORDS_NAME}' and '${adminFolderId}' in parents and trashed=false&fields=files(id)`,{headers:{Authorization:`Bearer ${gdriveToken}`}});
+  const sd = await sr.json();
+  if (sd.files && sd.files.length) { _adminSheetIdCache = sd.files[0].id; return _adminSheetIdCache; }
+  return null;
+}
+
+// =====================================================================
+// CLIENT PRE-FILL FROM PROSPECT RECORD
+// =====================================================================
+async function loadClientFromURL() {
+  const params   = new URLSearchParams(window.location.search);
+  const clientId = params.get('client');
+  const banner   = document.getElementById('clientBanner');
+  const noBanner = document.getElementById('noClientBanner');
+  if (!clientId) { if(noBanner) noBanner.style.display='flex'; return; }
+  if (banner) {
+    banner.style.display = 'flex';
+    document.getElementById('bannerClientId').textContent = 'Ref: ' + clientId;
+    try { const n=sessionStorage.getItem('bb_selected_client_name'); if(n&&document.getElementById('bannerClientName')) document.getElementById('bannerClientName').textContent=n; } catch(e){}
+  }
+  if (gdriveToken) { fetchClientDetails(clientId); }
+  else { showPrefillRetry(clientId); }
+}
+
+function showPrefillRetry(clientId) {
+  const btn = document.getElementById('prefillRetryBtn');
+  if (btn) {
+    btn.style.display = 'block';
+    btn.onclick = () => { btn.textContent = '⏳ Loading…'; fetchClientDetails(clientId); };
+  }
+}
+
+async function fetchClientDetails(clientId) {
+  try {
+    await getDriveToken();
+    const fr  = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${GDRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,{headers:{Authorization:`Bearer ${gdriveToken}`}});
+    const fd  = await fr.json();
+    if (!fd.files||!fd.files.length) return;
+    const sid = await getAdminSheetId(fd.files[0].id);
+    if (!sid) return;
+    const dl  = await fetch(`https://www.googleapis.com/drive/v3/files/${sid}?alt=media`,{headers:{Authorization:`Bearer ${gdriveToken}`}});
+    const ab  = await dl.arrayBuffer();
+    const wb  = XLSX.read(new Uint8Array(ab),{type:'array'});
+    const ws  = wb.Sheets['Client Records'];
+    const rows= XLSX.utils.sheet_to_json(ws,{header:1});
+    const hdrs= rows[0]||[];
+    const idCol = hdrs.indexOf('Client ID');
+    const row   = rows.slice(1).find(r => r[idCol]===clientId);
+    if (!row) { showToast('⚠️ Client '+clientId+' not found'); return; }
+    const get = col => { const i=hdrs.indexOf(col); return (i>-1&&row[i]) ? row[i].toString() : ''; };
+    const fields = {
+      companyName:  get('Billing Entity'),
+      contactName:  get('Contact Name'),
+      contactEmail: get('Contact Email'),
+      contactPhone: get('Contact Mobile'),
+      siteAddress:  get('Street Address'),
+    };
+    Object.entries(fields).forEach(([id,val]) => { const el=document.getElementById(id); if(el&&val) el.value=val; });
+    const nameEl = document.getElementById('bannerClientName');
+    if (nameEl) nameEl.textContent = get('Billing Entity')||clientId;
+    const btn = document.getElementById('prefillRetryBtn');
+    if (btn) btn.style.display='none';
+    updateProgress();
+    showToast('✅ Client details loaded');
+  } catch(e) {
+    showToast('⚠️ Could not load client — tap to retry');
+    showPrefillRetry(clientId);
+  }
+}
+
+// =====================================================================
+// UTILS
+// =====================================================================
+function confirmClear() { if(confirm('Clear all quote data?')) { clearAll(); showToast('✅ Cleared'); } }
+function clearAll() {
+  ['quoteDate','quoteNumber','validDays','companyName','contactName','contactEmail',
+   'contactPhone','siteAddress','closingComments'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('bdmName').selectedIndex=0;
+  document.getElementById('bulkRows').innerHTML='';
+  document.getElementById('packagedRows').innerHTML='';
+  document.getElementById('validDays').value='30';
+  document.getElementById('closingComments').value='';
+  setClientType('new');
+  generateQuoteNumber();
+  addBulkRow();
+  autoFillBDM('Michael Hodnett');
+  document.getElementById('bdmName').value='Michael Hodnett';
+  const today=new Date().toISOString().split('T')[0];
+  document.getElementById('quoteDate').value=today;
+  updateValidity(); updateProgress();
+}
+function closeModal() { document.getElementById('modal').classList.remove('active'); }
+function showToast(msg, dur=2500) {
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), dur);
+}
+</script>
+
+<!-- html-docx-js for Word export -->
+<script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
+</body>
+</html>
