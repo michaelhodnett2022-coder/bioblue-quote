@@ -1477,7 +1477,10 @@ async function uploadWordToDrive(clientFolderId, baseName, d) {
     fm.append('file', blob, baseName+'.docx');
     const up = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
       { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}` }, body:fm });
-    return (await up.json()).webViewLink || '';
+    if (!up.ok) throw new Error(`Word upload failed (${up.status})`);
+    const result = await up.json();
+    if (!result.id) throw new Error('Word upload returned no file ID');
+    return result.webViewLink || '';
   } catch(e) {
     console.warn('Word upload failed:', e.message);
     return '';
@@ -1514,14 +1517,20 @@ async function saveToDrive() {
     const wordLink = await uploadWordToDrive(clientFolderId, baseName, d);
 
     // Save JSON backup
-    const quoteFolderId = await _getOrCreateQFolder(clientFolderId, QUOTE_JSON_SUBFOLDER);
-    await saveQuoteJSON(quoteFolderId, baseName, d);
+    let _jsonWarning = '';
+    try {
+      const quoteFolderId = await _getOrCreateQFolder(clientFolderId, QUOTE_JSON_SUBFOLDER);
+      await saveQuoteJSON(quoteFolderId, baseName, d);
+    } catch(jsonErr) {
+      console.error('Quote JSON save failed:', jsonErr);
+      _jsonWarning = `\n\n⚠️ JSON backup failed: ${jsonErr.message}\n(Word doc is safe on Drive — but Recall/Load Draft won't find this quote until the JSON saves successfully)`;
+    }
 
     document.getElementById('modalTitle').textContent = '✅ Word Doc Saved';
     document.getElementById('modalMsg').textContent =
       `Word document saved to Google Drive.\n\n📋 ${quoteRef}\n🏢 ${d.companyName}\n\n` +
       `📝 Word: ${wordLink ? 'Saved ✅' : 'Save failed ⚠️'}` +
-      (wordLink ? `\n\n${wordLink}` : '');
+      (wordLink ? `\n\n${wordLink}` : '') + _jsonWarning;
     document.getElementById('modalFieldToolsBtn').style.display = clientId ? 'inline-block' : 'none';
     document.getElementById('modal').classList.add('active');
     showToast('✅ Word doc saved to Drive!');
@@ -1775,13 +1784,16 @@ async function _getOrCreateQFolder(parentId, name) {
   if (_quoteFolderCache[key]) return _quoteFolderCache[key];
   const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
     { headers: { Authorization: `Bearer ${gdriveToken}` } });
+  if (!sr.ok) throw new Error(`Folder search failed (${sr.status}) — Drive session may have expired, try reloading`);
   const sd = await sr.json();
   if (sd.files?.length) { _quoteFolderCache[key] = sd.files[0].id; return sd.files[0].id; }
   const cr = await fetch('https://www.googleapis.com/drive/v3/files', {
     method: 'POST', headers: { Authorization: `Bearer ${gdriveToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] })
   });
+  if (!cr.ok) throw new Error(`Folder creation failed (${cr.status}) — Drive session may have expired, try reloading`);
   const created = await cr.json();
+  if (!created.id) throw new Error('Folder creation returned no ID');
   _quoteFolderCache[key] = created.id;
   return created.id;
 }
@@ -1959,32 +1971,34 @@ function restoreQuoteFields(data) {
 }
 
 async function saveQuoteJSON(quoteFolderId, baseName, d) {
-  try {
-    const fileName = baseName + '_quote_data.json';
-    const blob = new Blob([JSON.stringify({ ...d, quoteStatus: _quoteStatus, _contacts: _loadedContacts, _savedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
-    if (!_quoteJsonFileId) {
-      const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name contains '_quote_data.json' and '${quoteFolderId}' in parents and trashed=false&fields=files(id)`,
-        { headers: { Authorization: `Bearer ${gdriveToken}` } });
-      const sd = await sr.json();
-      if (sd.files?.length) _quoteJsonFileId = sd.files[0].id;
-    }
-    const fm = new FormData();
-    if (_quoteJsonFileId) {
-      fm.append('metadata', new Blob([JSON.stringify({})], { type: 'application/json' }));
-      fm.append('file', blob, fileName);
-      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${_quoteJsonFileId}?uploadType=multipart`, { method: 'PATCH', headers: { Authorization: `Bearer ${gdriveToken}` }, body: fm });
-    } else {
-      fm.append('metadata', new Blob([JSON.stringify({ name: fileName, parents: [quoteFolderId] })], { type: 'application/json' }));
-      fm.append('file', blob, fileName);
-      const cr = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${gdriveToken}` }, body: fm });
-      const created = await cr.json();
-      _quoteJsonFileId = created.id;
-    }
-    if (_quoteDraftFileId) {
-      fetch(`https://www.googleapis.com/drive/v3/files/${_quoteDraftFileId}`, { method:'DELETE', headers:{Authorization:`Bearer ${gdriveToken}`} }).catch(()=>{});
-      _quoteDraftFileId = null;
-    }
-  } catch(e) { console.warn('saveQuoteJSON:', e); }
+  const fileName = baseName + '_quote_data.json';
+  const blob = new Blob([JSON.stringify({ ...d, quoteStatus: _quoteStatus, _contacts: _loadedContacts, _savedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+  if (!_quoteJsonFileId) {
+    const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name contains '_quote_data.json' and '${quoteFolderId}' in parents and trashed=false&fields=files(id)`,
+      { headers: { Authorization: `Bearer ${gdriveToken}` } });
+    if (!sr.ok) throw new Error(`JSON lookup failed (${sr.status})`);
+    const sd = await sr.json();
+    if (sd.files?.length) _quoteJsonFileId = sd.files[0].id;
+  }
+  const fm = new FormData();
+  if (_quoteJsonFileId) {
+    fm.append('metadata', new Blob([JSON.stringify({})], { type: 'application/json' }));
+    fm.append('file', blob, fileName);
+    const pr = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${_quoteJsonFileId}?uploadType=multipart`, { method: 'PATCH', headers: { Authorization: `Bearer ${gdriveToken}` }, body: fm });
+    if (!pr.ok) throw new Error(`JSON update failed (${pr.status})`);
+  } else {
+    fm.append('metadata', new Blob([JSON.stringify({ name: fileName, parents: [quoteFolderId] })], { type: 'application/json' }));
+    fm.append('file', blob, fileName);
+    const cr = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${gdriveToken}` }, body: fm });
+    if (!cr.ok) throw new Error(`JSON creation failed (${cr.status})`);
+    const created = await cr.json();
+    if (!created.id) throw new Error('JSON creation returned no ID');
+    _quoteJsonFileId = created.id;
+  }
+  if (_quoteDraftFileId) {
+    fetch(`https://www.googleapis.com/drive/v3/files/${_quoteDraftFileId}`, { method:'DELETE', headers:{Authorization:`Bearer ${gdriveToken}`} }).catch(()=>{});
+    _quoteDraftFileId = null;
+  }
 }
 
 // =====================================================================
