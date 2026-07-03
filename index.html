@@ -636,17 +636,15 @@ let clientType = 'new'; // 'new' | 'existing'
 // =====================================================================
 document.addEventListener('DOMContentLoaded', () => {
   try { if(typeof emailjs!=='undefined') emailjs.init(EMAILJS_PUBLIC_KEY); } catch(e){}
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById('quoteDate').value = today;
-  generateQuoteNumber();
-  updateValidity();
-  addBulkRow();
-  autoFillBDM('Michael Hodnett');
-  document.getElementById('bdmName').value = 'Michael Hodnett';
-  updateClosingComments();
-  setQuoteStatus('Draft'); // initialise status buttons
-  loadClientFromURL();
-  updateProgress();
+  try { document.getElementById('quoteDate').value = new Date().toISOString().split('T')[0]; } catch(e){ console.warn('quoteDate failed:', e.message); }
+  try { generateQuoteNumber(); } catch(e){ console.warn('generateQuoteNumber failed:', e.message); }
+  try { updateValidity(); } catch(e){ console.warn('updateValidity failed:', e.message); }
+  try { addBulkRow(); } catch(e){ console.warn('addBulkRow failed:', e.message); }
+  try { autoFillBDM('Michael Hodnett'); document.getElementById('bdmName').value = 'Michael Hodnett'; } catch(e){ console.warn('autoFillBDM failed:', e.message); }
+  try { updateClosingComments(); } catch(e){ console.warn('updateClosingComments failed:', e.message); }
+  try { setQuoteStatus('Draft'); } catch(e){ console.warn('setQuoteStatus failed:', e.message); }
+  try { loadClientFromURL(); } catch(e){ console.warn('loadClientFromURL failed:', e.message); }
+  try { updateProgress(); } catch(e){ console.warn('updateProgress failed:', e.message); }
 });
 
 // =====================================================================
@@ -2072,8 +2070,6 @@ function clearAll() {
   updateValidity(); updateProgress();
 }
 function closeModal() { document.getElementById('modal').classList.remove('active'); }
-function showToast(msg, dur=2500) {
-
 function showToast(msg, dur=2500) {
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'), dur);
