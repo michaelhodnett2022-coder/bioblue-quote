@@ -1310,7 +1310,7 @@ async function generatePDF(returnDoc = false) {
   if (letterContentHeight + pricingTablesHeight <= availableHeight) {
     // Preferred layout: Letter + Pricing together on page one, Billing/Signoff on page two
     const combinedAB = letterContentHeight + pricingTablesHeight;
-    y = margin + Math.max(0, (availableHeight - combinedAB) / 2);
+    y = margin + Math.min(30, Math.max(0, (availableHeight - combinedAB) / 2));
     drawLetterContent();
     drawPricingTables();
 
@@ -1320,12 +1320,20 @@ async function generatePDF(returnDoc = false) {
   } else {
     // Fallback layout: too many pricing rows to fit with the letter —
     // revert to Letter alone on page one, Pricing + Billing/Signoff on page two
-    y = margin + Math.max(0, (availableHeight - letterContentHeight) / 2);
+    y = margin + Math.min(30, Math.max(0, (availableHeight - letterContentHeight) / 2));
     drawLetterContent();
 
     doc.addPage();
     y = margin + CONTENT_HEADER_HEIGHT; // letter-style top alignment, plus room for the dialled-down header
     drawPricingTables();
+    // Keep the whole billing/closing/signoff block together: if it won't
+    // ALL fit in what's left on this page, push it onto a fresh page as one
+    // unit instead of letting chk() split it reactively element-by-element
+    // (which previously orphaned just the sign-off alone on its own page).
+    if (y + billingSectionHeight > 280) {
+      doc.addPage();
+      y = margin + CONTENT_HEADER_HEIGHT;
+    }
     drawBillingSection();
   }
 
@@ -1593,12 +1601,13 @@ function buildQuoteRef(counter, companyName, dateStr) {
 // with a date suffix (DDMMYYYY) as requested. Used everywhere a quote file
 // (PDF, Word, JSON) gets named, so all four save paths stay consistent.
 function buildQuoteBaseName(d) {
-  const nameSlug = (d.companyName || 'Client')
-    .replace(/[^a-zA-Z0-9\s]/g, '').trim().replace(/\s+/g, '_') || 'Client';
+  // d.quoteNumber (from buildQuoteRef) already contains the sequence number,
+  // company slug, and date in one string, e.g. "Q002403-AABC-Test-Company-05072026".
+  // Previously this wrapped that already-complete reference with the company
+  // name again as a prefix and appended another date suffix on top,
+  // duplicating both. The reference alone is shorter and fully unique.
   const qNum = (d.quoteNumber || 'Q').replace(/[^a-zA-Z0-9-]/g, '');
-  const parts = (d.quoteDate || new Date().toISOString().split('T')[0]).split('-');
-  const ddmmyyyy = (parts[2]||'00')+(parts[1]||'00')+(parts[0]||'0000');
-  return `${nameSlug}.Quote_${qNum}_${ddmmyyyy}`;
+  return qNum || 'Quote';
 }
 
 // Shared gate for minting a real sequential quote number. Both saveToDrive()
@@ -1835,16 +1844,17 @@ async function saveToDrive() {
     showToast('🔢 Generating quote number…');
     const { quoteNumber: quoteRef, supersedes } = await ensureQuoteNumber(d);
     const baseName = buildQuoteBaseName(d);
+    const quotesFolderId = await getQuotesOutputFolder(clientFolderId);
 
     // Upload Word doc
     showToast('📝 Saving Word doc to Drive…');
-    const wordLink = await uploadWordToDrive(clientFolderId, baseName, d);
+    const wordLink = await uploadWordToDrive(quotesFolderId, baseName, d);
 
     // Save JSON backup
     let _jsonWarning = '';
     let jsonFileId = null;
     try {
-      const quoteFolderId = await _getOrCreateQFolder(clientFolderId, QUOTE_JSON_SUBFOLDER);
+      const quoteFolderId = await getQuoteJsonFolder(clientFolderId);
       jsonFileId = await saveQuoteJSON(quoteFolderId, baseName, d);
     } catch(jsonErr) {
       console.error('Quote JSON save failed:', jsonErr);
@@ -2116,6 +2126,23 @@ let _quoteJsonFileId  = null;
 const QUOTE_JSON_SUBFOLDER = 'Quote Data';
 const _quoteFolderCache = {};
 
+// Consolidates JSON subfolders under one "Data" parent for tidiness (Fresh
+// Clients Only — existing clients keep using their current flat structure,
+// since _getOrCreateQFolder will simply keep finding their existing
+// subfolder at the old location; only brand-new subfolders go under Data/).
+async function getQuoteJsonFolder(clientFolderId) {
+  const dataFolderId = await _getOrCreateQFolder(clientFolderId, 'Data');
+  return await _getOrCreateQFolder(dataFolderId, QUOTE_JSON_SUBFOLDER);
+}
+
+// Separate from the JSON data folder — this holds the actual quote outputs
+// (PDF + Word doc) so multiple quotes for the same client land together
+// instead of sitting loose in the client's root folder.
+const QUOTES_OUTPUT_FOLDER = 'Quotes';
+async function getQuotesOutputFolder(clientFolderId) {
+  return await _getOrCreateQFolder(clientFolderId, QUOTES_OUTPUT_FOLDER);
+}
+
 // Revision tracking — set when a past quote is recalled, consumed the next
 // time a real quote number is minted (see ensureQuoteNumber below).
 let _recalledQuoteNumber   = null;
@@ -2165,7 +2192,7 @@ async function saveDraft() {
     const rootData = await rootRes.json();
     if (!rootData.files?.length) throw new Error('Root folder not found');
     const clientFolderId = await getClientFolderFromRecord(rootData.files[0].id, clientId, clientId);
-    const quoteFolderId = await _getOrCreateQFolder(clientFolderId, QUOTE_JSON_SUBFOLDER);
+    const quoteFolderId = await getQuoteJsonFolder(clientFolderId);
     const d = collectData();
     const blob = new Blob([JSON.stringify({ ...d, quoteStatus: _quoteStatus, _contacts: _loadedContacts, _draftSavedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
     const fileName = `BB_Quote_${clientId}_draft.json`;
@@ -2193,7 +2220,7 @@ async function checkForQuoteDraft(rootId, clientId) {
   try {
     const clientFolderId = await getClientFolderFromRecord(rootId, clientId, clientId);
     if (!clientFolderId) return;
-    const qFolderId = await _getOrCreateQFolder(clientFolderId, QUOTE_JSON_SUBFOLDER);
+    const qFolderId = await getQuoteJsonFolder(clientFolderId);
     const fileName = `BB_Quote_${clientId}_draft.json`;
     const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and '${qFolderId}' in parents and trashed=false&fields=files(id,modifiedTime)`,
       { headers: { Authorization: `Bearer ${gdriveToken}` } });
@@ -2212,7 +2239,7 @@ async function checkForExistingQuote(rootId, clientId) {
   try {
     const clientFolderId = await getClientFolderFromRecord(rootId, clientId, clientId);
     if (!clientFolderId) return;
-    const qFolderId = await _getOrCreateQFolder(clientFolderId, QUOTE_JSON_SUBFOLDER);
+    const qFolderId = await getQuoteJsonFolder(clientFolderId);
     const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name contains '_quote_data.json' and '${qFolderId}' in parents and trashed=false&fields=files(id,modifiedTime)&orderBy=modifiedTime desc`,
       { headers: { Authorization: `Bearer ${gdriveToken}` } });
     const sd = await sr.json();
@@ -2415,16 +2442,17 @@ async function emailPDFAndSaveToDrive() {
     const rootFolderId = rootData.files?.[0]?.id;
     const clientFolderId = clientId ? await getClientFolderFromRecord(rootFolderId, clientId, d.companyName||clientId) : rootFolderId;
     const baseName = buildQuoteBaseName(d);
+    const quotesFolderId = await getQuotesOutputFolder(clientFolderId);
     showToast('☁️ Saving PDF to Drive...');
     const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify({ name:baseName+'.pdf', parents:[clientFolderId] })], { type:'application/json' }));
+    form.append('metadata', new Blob([JSON.stringify({ name:baseName+'.pdf', parents:[quotesFolderId] })], { type:'application/json' }));
     form.append('file', pdfBlob, baseName+'.pdf');
     const up = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
       { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}` }, body:form });
     if (!up.ok) throw new Error(`PDF upload failed (${up.status}) — Drive session may have expired, try reloading`);
     const uploaded = await up.json();
     if (!uploaded.id) throw new Error('PDF upload returned no file ID');
-    const quoteFolderId = await _getOrCreateQFolder(clientFolderId, QUOTE_JSON_SUBFOLDER);
+    const quoteFolderId = await getQuoteJsonFolder(clientFolderId);
     const jsonFileId = await saveQuoteJSON(quoteFolderId, baseName, d);
     // TODO: email-to-BDM is parked for now per Michael's instruction — button
     // is relabeled "Save to Drive" to match. Re-enable this call once the
