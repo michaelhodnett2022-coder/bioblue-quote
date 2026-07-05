@@ -959,7 +959,12 @@ async function generatePDF(returnDoc = false) {
   const WHITE  = [255, 255, 255];
   const BLACK  = [30, 40, 50];
 
-  function chk(n=25) { if(y+n>280){doc.addPage();y=margin;} }
+  // Height reserved at the top of any "second or later" content page for the
+  // dialled-down header (small logo + blue rule) — anything chk() creates is
+  // by definition past the first content page, so it always reserves this.
+  const CONTENT_HEADER_HEIGHT = 14;
+
+  function chk(n=25) { if(y+n>280){doc.addPage();y=margin+CONTENT_HEADER_HEIGHT;} }
   function txt(text, x, fy, opts) { doc.text(text, x, fy, opts); }
 
   // ── FOOTER (drawn on each page via event) ──────────────────────
@@ -1008,6 +1013,31 @@ async function generatePDF(returnDoc = false) {
         const rightText = `${STATE_COVERAGE.join(' \u00b7 ')}   |   Page ${pageNum} of ${contentPageCount}`;
         doc.text(rightText, pageW-margin, 291, { align:'right' });
       }
+    }
+  }
+
+  // Dialled-down header for the second-or-later content page onward — the
+  // cover has no header, and the first content page keeps its own full-size
+  // logo (drawn inline in drawLetterContent). Everything after that just
+  // gets a small logo and a thin blue rule, so pages don't feel bare but
+  // don't repeat the full treatment either.
+  function addContentPageHeaders() {
+    const totalPages = doc.internal.getNumberOfPages();
+    const firstContentPage = _coverPageDrawn ? 2 : 1;
+    for (let i=1; i<=totalPages; i++) {
+      if (_coverPageDrawn && i === 1) continue; // cover — no header
+      if (i === firstContentPage) continue;      // first content page — keeps its own full logo
+      doc.setPage(i);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(13);
+      doc.setTextColor(...NAVY);
+      doc.text('Bio', margin, 14);
+      const bw = doc.getTextWidth('Bio');
+      doc.setTextColor(...BLUE);
+      doc.text('Blue', margin+bw, 14);
+      doc.setDrawColor(...BLUE);
+      doc.setLineWidth(0.6);
+      doc.line(margin, 19, pageW-margin, 19);
     }
   }
 
@@ -1074,7 +1104,8 @@ async function generatePDF(returnDoc = false) {
   const letterContentHeight = 22 + 8 + clientTableHeight + 8 + parasHeight;
 
   function drawLetterContent() {
-    // Logo (top left)
+    // Logo (top left) — address/phone/email/ABN removed per Michael's
+    // instruction; those now live on the cover page footer instead.
     doc.setFont('helvetica','bold');
     doc.setFontSize(32);
     doc.setTextColor(...NAVY);
@@ -1082,13 +1113,6 @@ async function generatePDF(returnDoc = false) {
     const bioW = doc.getTextWidth('Bio');
     doc.setTextColor(...BLUE);
     doc.text('Blue', margin+bioW, y+10);
-
-    // Address block (top right)
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(...GRAY);
-    ['180a Cavan Road','DRY CREEK 5094 SA','ABN 18 642 169 051','','1300 211 007','sales@bioblue.com.au']
-      .forEach((line,i) => doc.text(line, pageW-margin, y+2+i*4, {align:'right'}));
     y += 22;
 
     // Divider
@@ -1291,7 +1315,7 @@ async function generatePDF(returnDoc = false) {
     drawPricingTables();
 
     doc.addPage();
-    y = margin; // letter-style: starts at the top, not vertically centred
+    y = margin + CONTENT_HEADER_HEIGHT; // letter-style top alignment, plus room for the dialled-down header
     drawBillingSection();
   } else {
     // Fallback layout: too many pricing rows to fit with the letter —
@@ -1300,12 +1324,13 @@ async function generatePDF(returnDoc = false) {
     drawLetterContent();
 
     doc.addPage();
-    y = margin; // letter-style: starts at the top, not vertically centred
+    y = margin + CONTENT_HEADER_HEIGHT; // letter-style top alignment, plus room for the dialled-down header
     drawPricingTables();
     drawBillingSection();
   }
 
   // Footer on all pages
+  addContentPageHeaders();
   addPageFooter();
 
   if (returnDoc) return doc;
