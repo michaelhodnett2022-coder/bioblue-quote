@@ -445,10 +445,10 @@ input:checked + .slider:before{transform:translateX(16px);}
             <thead>
               <tr>
                 <th style="width:22%;">Depot / Site</th>
-                <th style="width:17%;">Bulk CPL (¢/L)</th>
-                <th style="width:17%;">Tank Hire CPL (¢/L)</th>
-                <th style="width:17%;">Freight CPL (¢/L)</th>
-                <th style="width:19%;">Total CPL (¢/L)</th>
+                <th style="width:17%;">Bulk cpl</th>
+                <th style="width:17%;">Tank Hire cpl</th>
+                <th style="width:17%;">Freight cpl</th>
+                <th style="width:19%;">Total cpl</th>
                 <th style="width:8%;text-align:center;">✕</th>
               </tr>
             </thead>
@@ -1981,11 +1981,13 @@ async function fetchClientDetails(clientId) {
   try {
     await getDriveToken();
     const fr  = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${GDRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,{headers:{Authorization:`Bearer ${gdriveToken}`}});
+    if (!fr.ok) throw new Error(`Folder search failed (${fr.status})`);
     const fd  = await fr.json();
     if (!fd.files||!fd.files.length) return;
     const sid = await getAdminSheetId(fd.files[0].id);
     if (!sid) return;
     const dl  = await fetch(`https://www.googleapis.com/drive/v3/files/${sid}?alt=media`,{headers:{Authorization:`Bearer ${gdriveToken}`}});
+    if (!dl.ok) throw new Error(`Client records download failed (${dl.status})`);
     const ab  = await dl.arrayBuffer();
     const wb  = XLSX.read(new Uint8Array(ab),{type:'array'});
     const ws  = wb.Sheets['Client Records'];
@@ -2007,8 +2009,14 @@ async function fetchClientDetails(clientId) {
       { role:'Other Contact',      name:get('Other Contact Name'),    email:get('Other Contact Email'),    phone:get('Other Contact Phone') },
     ].filter(c => c.name);
     buildContactSelector(_loadedContacts);
-    const legacyName = get('Business Contact Name') || get('Contact Name');
-    if (legacyName && !document.getElementById('contactName').value) document.getElementById('contactName').value = legacyName;
+    // Auto-select the first contact (usually Site Contact) so name, email, AND
+    // phone all populate together on load — previously this only auto-filled
+    // the name field directly, leaving email/phone blank unless the BDM
+    // separately noticed and clicked a card above. selectContact() still lets
+    // the BDM pick a different contact, or just edit any field independently.
+    if (_loadedContacts.length && !document.getElementById('contactName').value) {
+      selectContact(0);
+    }
     const nameEl = document.getElementById('bannerClientName');
     if (nameEl) nameEl.textContent = get('Billing Entity')||clientId;
     const retryBtn = document.getElementById('prefillRetryBtn');
