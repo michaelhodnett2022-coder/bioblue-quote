@@ -1528,17 +1528,17 @@ function loadManualClient() {
 }
 
 // =====================================================================
-// SEQUENTIAL QUOTE COUNTER (BB_Quote_Counter.json in AA_App_Admin)
+// SEQUENTIAL QUOTE COUNTER (BB_Quote_Counter.json in ADMIN DATA - DO NOT REMOVE)
 // =====================================================================
 async function getAdminFolderId(rootFolderId) {
   const sr = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=name='AA_App_Admin' and '${rootFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
+    `https://www.googleapis.com/drive/v3/files?q=name='ADMIN DATA - DO NOT REMOVE' and '${rootFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
     { headers:{ Authorization:`Bearer ${gdriveToken}` } });
   const sd = await sr.json();
   if (sd.files && sd.files.length) return sd.files[0].id;
   const cr = await fetch('https://www.googleapis.com/drive/v3/files',
     { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}`,'Content-Type':'application/json' },
-      body: JSON.stringify({ name:'AA_App_Admin', mimeType:'application/vnd.google-apps.folder', parents:[rootFolderId] }) });
+      body: JSON.stringify({ name:'ADMIN DATA - DO NOT REMOVE', mimeType:'application/vnd.google-apps.folder', parents:[rootFolderId] }) });
   return (await cr.json()).id;
 }
 
@@ -1947,12 +1947,12 @@ async function getClientFolderFromRecord(rootFolderId, clientId, fallback) {
 let _adminSheetIdCache = null;
 async function getAdminSheetId(rootFolderId) {
   if (_adminSheetIdCache) return _adminSheetIdCache;
-  const afr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='AA_App_Admin' and '${rootFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,{headers:{Authorization:`Bearer ${gdriveToken}`}});
+  const afr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='ADMIN DATA - DO NOT REMOVE' and '${rootFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,{headers:{Authorization:`Bearer ${gdriveToken}`}});
   const afd = await afr.json();
   let adminFolderId;
   if (afd.files && afd.files.length) { adminFolderId = afd.files[0].id; }
   else {
-    const cr = await fetch('https://www.googleapis.com/drive/v3/files',{method:'POST',headers:{Authorization:`Bearer ${gdriveToken}`,'Content-Type':'application/json'},body:JSON.stringify({name:'AA_App_Admin',mimeType:'application/vnd.google-apps.folder',parents:[rootFolderId]})});
+    const cr = await fetch('https://www.googleapis.com/drive/v3/files',{method:'POST',headers:{Authorization:`Bearer ${gdriveToken}`,'Content-Type':'application/json'},body:JSON.stringify({name:'ADMIN DATA - DO NOT REMOVE',mimeType:'application/vnd.google-apps.folder',parents:[rootFolderId]})});
     adminFolderId = (await cr.json()).id;
   }
   const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${CLIENT_RECORDS_NAME}' and '${adminFolderId}' in parents and trashed=false&fields=files(id)`,{headers:{Authorization:`Bearer ${gdriveToken}`}});
