@@ -425,15 +425,30 @@ input:checked + .slider:before{transform:translateX(16px);}
         </label>
       </div>
 
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding:10px 12px;background:#f8fafc;border-radius:8px;border:1px solid var(--gray-light);">
+        <label style="font-size:12px;font-weight:600;color:var(--gray-mid);text-transform:uppercase;letter-spacing:0.4px;">
+          Price display on PDF / Word doc
+        </label>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span id="priceDisplayLabelItemised" style="font-size:12px;font-weight:700;color:var(--navy);">Itemised</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="priceDisplayCombined" onchange="updatePriceDisplayLabels();updateProgress()">
+            <span class="slider"></span>
+          </label>
+          <span id="priceDisplayLabelCombined" style="font-size:12px;font-weight:600;color:var(--gray-mid);">Combined Delivered Price</span>
+        </div>
+      </div>
+
       <div id="bulkPricingArea">
         <div class="pricing-table-wrap">
           <table class="pricing-table">
             <thead>
               <tr>
-                <th style="width:28%;">Depot / Site</th>
-                <th style="width:20%;">Bulk CPL (¢/L)</th>
-                <th style="width:20%;">Freight CPL (¢/L)</th>
-                <th style="width:24%;">Delivered CPL (¢/L)</th>
+                <th style="width:22%;">Depot / Site</th>
+                <th style="width:17%;">Bulk CPL (¢/L)</th>
+                <th style="width:17%;">Tank Hire CPL (¢/L)</th>
+                <th style="width:17%;">Freight CPL (¢/L)</th>
+                <th style="width:19%;">Total CPL (¢/L)</th>
                 <th style="width:8%;text-align:center;">✕</th>
               </tr>
             </thead>
@@ -723,7 +738,7 @@ function updateClosingComments() {
 // PRICING ROWS — BULK
 // =====================================================================
 let bulkRowCount = 0;
-function addBulkRow(depot='', bulkCpl='', freightCpl='') {
+function addBulkRow(depot='', bulkCpl='', tankHireCpl='', freightCpl='') {
   bulkRowCount++;
   const id = 'br' + bulkRowCount;
   const tr = document.createElement('tr');
@@ -733,6 +748,13 @@ function addBulkRow(depot='', bulkCpl='', freightCpl='') {
     <td>
       <div style="position:relative;">
         <input type="text" id="${id}_bulk" placeholder="e.g. 65" value="${bulkCpl}"
+          oninput="calcBulkDelivered('${id}');updateProgress()" style="padding-right:30px;text-align:right;">
+        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">¢/L</span>
+      </div>
+    </td>
+    <td>
+      <div style="position:relative;">
+        <input type="text" id="${id}_tankhire" placeholder="e.g. 5" value="${tankHireCpl}"
           oninput="calcBulkDelivered('${id}');updateProgress()" style="padding-right:30px;text-align:right;">
         <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">¢/L</span>
       </div>
@@ -755,15 +777,17 @@ function addBulkRow(depot='', bulkCpl='', freightCpl='') {
       <button class="remove-row-btn" onclick="removeRow('${id}')">×</button>
     </td>`;
   document.getElementById('bulkRows').appendChild(tr);
-  if (bulkCpl || freightCpl) calcBulkDelivered(id);
+  if (bulkCpl || tankHireCpl || freightCpl) calcBulkDelivered(id);
   updateProgress();
 }
 
 function calcBulkDelivered(id) {
-  const bulk    = parseFloat(document.getElementById(id+'_bulk')?.value) || 0;
-  const freight = parseFloat(document.getElementById(id+'_freight')?.value) || 0;
-  const dlvEl   = document.getElementById(id+'_delivered');
-  if (dlvEl) dlvEl.value = (bulk + freight > 0) ? (bulk + freight).toFixed(2) : '';
+  const bulk     = parseFloat(document.getElementById(id+'_bulk')?.value) || 0;
+  const tankHire = parseFloat(document.getElementById(id+'_tankhire')?.value) || 0;
+  const freight  = parseFloat(document.getElementById(id+'_freight')?.value) || 0;
+  const dlvEl    = document.getElementById(id+'_delivered');
+  const total = bulk + tankHire + freight;
+  if (dlvEl) dlvEl.value = (total > 0) ? total.toFixed(2) : '';
 }
 
 // =====================================================================
@@ -819,6 +843,13 @@ function toggleBulkSection() {
   const show = document.getElementById('includeBulk').checked;
   document.getElementById('bulkPricingArea').style.display = show ? 'block' : 'none';
 }
+function updatePriceDisplayLabels() {
+  const combined = document.getElementById('priceDisplayCombined')?.checked;
+  const l1 = document.getElementById('priceDisplayLabelItemised');
+  const l2 = document.getElementById('priceDisplayLabelCombined');
+  if (l1) { l1.style.color = combined ? 'var(--gray-mid)' : 'var(--navy)'; l1.style.fontWeight = combined ? '600' : '700'; }
+  if (l2) { l2.style.color = combined ? 'var(--navy)' : 'var(--gray-mid)'; l2.style.fontWeight = combined ? '700' : '600'; }
+}
 function togglePackagedSection() {
   const show = document.getElementById('includePackaged').checked;
   document.getElementById('packagedPricingArea').style.display = show ? 'block' : 'none';
@@ -837,14 +868,15 @@ function toggleSection(id) {
 function collectData() {
   const g = id => document.getElementById(id)?.value?.trim() || '';
 
-  // Bulk rows — depot + bulkCpl + freightCpl + deliveredCpl
+  // Bulk rows — depot + bulkCpl + tankHireCpl + freightCpl + deliveredCpl
   const bulkRows = [];
   document.querySelectorAll('#bulkRows tr').forEach(tr => {
     const depot     = tr.querySelector('input[type="text"]')?.value?.trim() || '';
     const bulkCpl   = document.getElementById(tr.id+'_bulk')?.value?.trim() || '';
+    const tankHireCpl = document.getElementById(tr.id+'_tankhire')?.value?.trim() || '';
     const freightCpl= document.getElementById(tr.id+'_freight')?.value?.trim() || '';
     const delivered = document.getElementById(tr.id+'_delivered')?.value?.trim() || '';
-    if (depot || bulkCpl) bulkRows.push({ depot, bulkCpl, freightCpl, delivered });
+    if (depot || bulkCpl) bulkRows.push({ depot, bulkCpl, tankHireCpl, freightCpl, delivered });
   });
 
   // Packaged rows — depot + code + desc + unitPrice + freightPrice
@@ -873,6 +905,7 @@ function collectData() {
     siteAddress:     g('siteAddress'),
     includeBulk:     document.getElementById('includeBulk').checked,
     includePackaged: document.getElementById('includePackaged').checked,
+    priceDisplayMode: document.getElementById('priceDisplayCombined')?.checked ? 'combined' : 'itemised',
     bulkRows,
     pkgRows,
     term1:           g('term1'),
@@ -989,79 +1022,91 @@ async function generatePDF(returnDoc = false) {
     } catch(e) { console.warn('Cover page failed:', e); }
   }
 
-  // ── PAGE 2: LETTER ─────────────────────────────────────────────
+  // ── CONTENT BLOCKS ──────────────────────────────────────────────
+  // Page composition is decided dynamically below: the preferred layout is
+  // Letter + Pricing tables together on page one, Billing/Signoff on page
+  // two. If the pricing tables have too many rows to fit alongside the
+  // letter, it falls back to the previous layout (Letter alone on page one,
+  // Pricing + Billing/Signoff together on page two) rather than letting a
+  // table awkwardly split mid-page.
 
-  // Logo (top left)
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(32);
-  doc.setTextColor(...NAVY);
-  doc.text('Bio', margin, y+10);
-  const bioW = doc.getTextWidth('Bio');
-  doc.setTextColor(...BLUE);
-  doc.text('Blue', margin+bioW, y+10);
+  const availableHeight = 280 - margin; // matches chk()'s page-break boundary
 
-  // Address block (top right)
-  doc.setFont('helvetica','normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(...GRAY);
-  ['180a Cavan Road','DRY CREEK 5094 SA','ABN 18 642 169 051','','1300 211 007','sales@bioblue.com.au']
-    .forEach((line,i) => doc.text(line, pageW-margin, y+2+i*4, {align:'right'}));
-  y += 22;
-
-  // Divider
-  doc.setDrawColor(...BLUE);
-  doc.setLineWidth(0.8);
-  doc.line(margin, y, pageW-margin, y);
-  y += 8;
-
-  // Client details table
-  const tData = [
-    ['Company',   d.companyName||'—',   'Date',    d.quoteDate ? new Date(d.quoteDate+'T12:00:00').toLocaleDateString('en-AU') : '—'],
-    ['Attention', d.contactName||'—',   'Quote #', d.quoteNumber||'—'],
-    ['Email',     d.contactEmail||'—',  '',        ''],
-    ['Phone',     d.contactPhone||'—',  '',        ''],
-  ];
-  const rh=7, c1=20, c2=66, c3=22, c4=62;
-  tData.forEach((row, ri) => {
-    const ry = y + ri*rh;
-    doc.setFillColor(...GRAY_L);
-    doc.rect(margin, ry, c1+c2+c3+c4, rh, 'F');
-    if (ri===0) { doc.setDrawColor(200,212,220); doc.setLineWidth(0.3); doc.rect(margin,ry,c1+c2+c3+c4,rh*4,'S'); }
-    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...NAVY);
-    doc.text(row[0], margin+2, ry+4.8);
-    if(row[2]) doc.text(row[2], margin+c1+c2+2, ry+4.8);
-    doc.setFont('helvetica','normal'); doc.setTextColor(...BLACK);
-    const v1lines = doc.splitTextToSize(row[1], c2-4);
-    doc.text(v1lines[0], margin+c1+2, ry+4.8);
-    if(row[3]) doc.text(row[3], margin+c1+c2+c3+2, ry+4.8);
-  });
-  y += tData.length*rh + 12;
-
-  // Greeting
-  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...BLACK);
-  doc.text(`Hi ${d.contactName || 'there'},`, margin, y); y += 8;
-
-  // Body paragraphs
+  // --- Block A: Letter content ---------------------------------------
   const paras = [];
   paras.push('Thank you for your interest in AdBlue\u00ae supply by BioBlue. Please see our formal quotation for VDA Certified AdBlue\u00ae supply below.');
   if (d.clientType === 'existing') paras.push('Thank you for your ongoing support as one of our valued business partners.');
   paras.push('Our company\'s focus is firmly on our customers, striving to provide the most reliable supply and leading customer service in the Australian AdBlue\u00ae market. BioBlue is a VDA certified AdBlue\u00ae manufacturer compliant with ISO22241 quality assurance requirements. VDA Certificate No. 0004706.');
-  // Validity
   const expiry = new Date(d.quoteDate + 'T12:00:00'); expiry.setDate(expiry.getDate()+(parseInt(d.validDays)||30));
   const expiryStr = expiry.toLocaleDateString('en-AU',{day:'2-digit',month:'long',year:'numeric'});
   paras.push(`This quote is valid for ${d.validDays||'30'} days from the date of issue (until ${expiryStr}). Please do not hesitate to contact us with any questions regarding your AdBlue\u00ae supply needs or the information in this quote.`);
 
-  paras.forEach(para => {
-    chk(20);
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  const parasHeight = paras.reduce((sum, para) => sum + doc.splitTextToSize(para, cW).length*5.2+5, 0);
+  const clientTableHeight = 4*7 + 12;
+  const letterContentHeight = 22 + 8 + clientTableHeight + 8 + parasHeight;
+
+  function drawLetterContent() {
+    // Logo (top left)
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(32);
+    doc.setTextColor(...NAVY);
+    doc.text('Bio', margin, y+10);
+    const bioW = doc.getTextWidth('Bio');
+    doc.setTextColor(...BLUE);
+    doc.text('Blue', margin+bioW, y+10);
+
+    // Address block (top right)
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...GRAY);
+    ['180a Cavan Road','DRY CREEK 5094 SA','ABN 18 642 169 051','','1300 211 007','sales@bioblue.com.au']
+      .forEach((line,i) => doc.text(line, pageW-margin, y+2+i*4, {align:'right'}));
+    y += 22;
+
+    // Divider
+    doc.setDrawColor(...BLUE);
+    doc.setLineWidth(0.8);
+    doc.line(margin, y, pageW-margin, y);
+    y += 8;
+
+    // Client details table
+    const tData = [
+      ['Company',   d.companyName||'—',   'Date',    d.quoteDate ? new Date(d.quoteDate+'T12:00:00').toLocaleDateString('en-AU') : '—'],
+      ['Attention', d.contactName||'—',   'Quote #', d.quoteNumber||'—'],
+      ['Email',     d.contactEmail||'—',  '',        ''],
+      ['Phone',     d.contactPhone||'—',  '',        ''],
+    ];
+    const rh=7, c1=20, c2=66, c3=22, c4=62;
+    tData.forEach((row, ri) => {
+      const ry = y + ri*rh;
+      doc.setFillColor(...GRAY_L);
+      doc.rect(margin, ry, c1+c2+c3+c4, rh, 'F');
+      if (ri===0) { doc.setDrawColor(200,212,220); doc.setLineWidth(0.3); doc.rect(margin,ry,c1+c2+c3+c4,rh*4,'S'); }
+      doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...NAVY);
+      doc.text(row[0], margin+2, ry+4.8);
+      if(row[2]) doc.text(row[2], margin+c1+c2+2, ry+4.8);
+      doc.setFont('helvetica','normal'); doc.setTextColor(...BLACK);
+      const v1lines = doc.splitTextToSize(row[1], c2-4);
+      doc.text(v1lines[0], margin+c1+2, ry+4.8);
+      if(row[3]) doc.text(row[3], margin+c1+c2+c3+2, ry+4.8);
+    });
+    y += tData.length*rh + 12;
+
+    // Greeting
     doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...BLACK);
-    const lines = doc.splitTextToSize(para, cW);
-    doc.text(lines, margin, y);
-    y += lines.length*5.2+5;
-  });
+    doc.text(`Hi ${d.contactName || 'there'},`, margin, y); y += 8;
 
-  // ── PAGE 2: PRICING ─────────────────────────────────────────────
-  doc.addPage(); y = margin;
+    paras.forEach(para => {
+      chk(20);
+      doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...BLACK);
+      const lines = doc.splitTextToSize(para, cW);
+      doc.text(lines, margin, y);
+      y += lines.length*5.2+5;
+    });
+  }
 
+  // --- Block B: Pricing tables -----------------------------------------
   function secHdr(title) {
     chk(12);
     doc.setFillColor(...NAVY); doc.rect(margin, y, cW, 8.5, 'F');
@@ -1069,7 +1114,6 @@ async function generatePDF(returnDoc = false) {
     doc.text(title, margin+3, y+5.8);
     y += 12;
   }
-
   function tableHdr(cols) {
     chk(8);
     const totalW = cols.reduce((s,c)=>s+c.w,0);
@@ -1080,7 +1124,6 @@ async function generatePDF(returnDoc = false) {
     cols.forEach(col => { doc.text(col.label, cx+2, y+4.8); cx+=col.w; });
     y += 7;
   }
-
   function tableRow(cols, values, shade) {
     chk(7);
     const totalW = cols.reduce((s,c)=>s+c.w,0);
@@ -1098,95 +1141,147 @@ async function generatePDF(returnDoc = false) {
     y += 7;
   }
 
-  // Bulk pricing table
-  if (d.includeBulk && d.bulkRows.length > 0) {
-    secHdr('BIOBLUE BULK ADBLUE\u00ae SUPPLY PROPOSAL');
-    const bCols = [
-      {label:'Depot / Site',          w:44},
-      {label:'Product',               w:52},
-      {label:'Bulk CPL (¢/L)',        w:28},
-      {label:'Freight CPL (¢/L)',     w:30},
-      {label:'Delivered CPL (ex GST)',w:cW-154},
-    ];
-    tableHdr(bCols);
-    d.bulkRows.forEach((row, i) => {
-      tableRow(bCols, [
-        row.depot,
-        BULK_PRODUCT.desc,
-        row.bulkCpl   ? row.bulkCpl+'¢'   : '—',
-        row.freightCpl? row.freightCpl+'¢' : '—',
-        row.delivered ? row.delivered+'¢'  : '—',
-      ], i%2===1);
-    });
-    y += 6;
+  let pricingTablesHeight = 0;
+  if (d.includeBulk && d.bulkRows.length > 0)      pricingTablesHeight += 12 + 7 + d.bulkRows.length*7 + 6;
+  if (d.includePackaged && d.pkgRows.length > 0)   pricingTablesHeight += 12 + 7 + d.pkgRows.length*7 + 6;
+
+  function drawPricingTables() {
+    if (d.includeBulk && d.bulkRows.length > 0) {
+      secHdr('BIOBLUE BULK ADBLUE\u00ae SUPPLY PROPOSAL');
+      if (d.priceDisplayMode === 'combined') {
+        const bCols = [
+          {label:'Depot / Site',              w:70},
+          {label:'Product',                   w:70},
+          {label:'Delivered Price (ex GST)',  w:cW-140},
+        ];
+        tableHdr(bCols);
+        d.bulkRows.forEach((row, i) => {
+          tableRow(bCols, [row.depot, BULK_PRODUCT.desc, row.delivered ? row.delivered+'¢/L' : '—'], i%2===1);
+        });
+      } else {
+        const bCols = [
+          {label:'Depot / Site',          w:36},
+          {label:'Product',               w:42},
+          {label:'Bulk CPL (¢/L)',        w:24},
+          {label:'Tank Hire CPL (¢/L)',   w:26},
+          {label:'Freight CPL (¢/L)',     w:24},
+          {label:'Total CPL (ex GST)',    w:cW-152},
+        ];
+        tableHdr(bCols);
+        d.bulkRows.forEach((row, i) => {
+          tableRow(bCols, [
+            row.depot, BULK_PRODUCT.desc,
+            row.bulkCpl     ? row.bulkCpl+'¢'     : '—',
+            row.tankHireCpl ? row.tankHireCpl+'¢' : '—',
+            row.freightCpl  ? row.freightCpl+'¢'  : '—',
+            row.delivered   ? row.delivered+'¢'   : '—',
+          ], i%2===1);
+        });
+      }
+      y += 6;
+    }
+
+    if (d.includePackaged && d.pkgRows.length > 0) {
+      chk(20);
+      secHdr('BIOBLUE PACKAGED ADBLUE\u00ae SUPPLY PROPOSAL');
+      const pCols = [
+        {label:'Depot / Site',       w:38},
+        {label:'Product Code',       w:34},
+        {label:'Description',        w:52},
+        {label:'Unit Price (ex GST)',w:30},
+        {label:'Freight ($/pallet)', w:cW-154},
+      ];
+      tableHdr(pCols);
+      d.pkgRows.forEach((row, i) => {
+        tableRow(pCols, [
+          row.depot, row.code, row.desc,
+          row.unitPrice   ? '$'+row.unitPrice   : '—',
+          row.freightPrice? '$'+row.freightPrice : '—',
+        ], i%2===1);
+      });
+      y += 6;
+    }
   }
 
-  // Packaged pricing table
-  if (d.includePackaged && d.pkgRows.length > 0) {
-    chk(20);
-    secHdr('BIOBLUE PACKAGED ADBLUE\u00ae SUPPLY PROPOSAL');
-    const pCols = [
-      {label:'Depot / Site',       w:38},
-      {label:'Product Code',       w:34},
-      {label:'Description',        w:52},
-      {label:'Unit Price (ex GST)',w:30},
-      {label:'Freight ($/pallet)', w:cW-154},
-    ];
-    tableHdr(pCols);
-    d.pkgRows.forEach((row, i) => {
-      tableRow(pCols, [
-        row.depot,
-        row.code,
-        row.desc,
-        row.unitPrice   ? '$'+row.unitPrice   : '—',
-        row.freightPrice? '$'+row.freightPrice : '—',
-      ], i%2===1);
-    });
-    y += 6;
-  }
-
-  // Billing & Payment Terms
-  chk(30);
-  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...NAVY);
-  doc.text('Billing & Payment Terms', margin, y); y += 7;
+  // --- Block C: Billing terms + closing comments + sign-off ------------
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
   const terms = [d.term1, d.term2, d.term3, d.term4].filter(Boolean);
-  terms.forEach(term => {
-    chk(7);
-    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...BLACK);
-    doc.setFillColor(...BLUE); doc.circle(margin+2.5, y-1, 1, 'F');
-    const lines = doc.splitTextToSize(term, cW-8);
-    doc.text(lines, margin+7, y);
-    y += lines.length*4.5+3;
-  });
-  y += 4;
-
-  // Closing comments
+  let billingSectionHeight = 7; // "Billing & Payment Terms" heading
+  billingSectionHeight += terms.reduce((sum, term) => sum + doc.splitTextToSize(term, cW-8).length*4.5+3, 0);
+  billingSectionHeight += 4;
   if (d.closingComments) {
-    chk(20);
+    billingSectionHeight += 7 + doc.splitTextToSize(d.closingComments, cW).length*5 + 6;
+  }
+  billingSectionHeight += 30; // sign-off block
+
+  function drawBillingSection() {
+    chk(30);
     doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...NAVY);
-    doc.text('Closing Comments', margin, y); y += 7;
-    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...BLACK);
-    const closeLines = doc.splitTextToSize(d.closingComments, cW);
-    closeLines.forEach(line => { chk(6); doc.text(line, margin, y); y += 5; });
-    y += 6;
+    doc.text('Billing & Payment Terms', margin, y); y += 7;
+    terms.forEach(term => {
+      chk(7);
+      doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...BLACK);
+      doc.setFillColor(...BLUE); doc.circle(margin+2.5, y-1, 1, 'F');
+      const lines = doc.splitTextToSize(term, cW-8);
+      doc.text(lines, margin+7, y);
+      y += lines.length*4.5+3;
+    });
+    y += 4;
+
+    if (d.closingComments) {
+      chk(20);
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...NAVY);
+      doc.text('Closing Comments', margin, y); y += 7;
+      doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...BLACK);
+      const closeLines = doc.splitTextToSize(d.closingComments, cW);
+      closeLines.forEach(line => { chk(6); doc.text(line, margin, y); y += 5; });
+      y += 6;
+    }
+
+    chk(30);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...BLACK);
+    doc.text('Kindest Regards,', margin, y); y += 10;
+    doc.setFont('helvetica','bold'); doc.setFontSize(10);
+    doc.text(d.bdmSignName||'Michael Hodnett', margin, y); y += 5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...GRAY);
+    doc.text(d.bdmSignTitle||'Business Development Manager (WA)', margin, y); y += 5;
+    doc.text(`Mobile: ${d.bdmSignMobile}`, margin, y); y += 5;
+    doc.text(`Email: ${d.bdmSignEmail}`, margin, y);
   }
 
-  // Sign-off
-  chk(30);
-  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...BLACK);
-  doc.text('Kindest Regards,', margin, y); y += 10;
-  doc.setFont('helvetica','bold'); doc.setFontSize(10);
-  doc.text(d.bdmSignName||'Michael Hodnett', margin, y); y += 5;
-  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...GRAY);
-  doc.text(d.bdmSignTitle||'Business Development Manager (WA)', margin, y); y += 5;
-  doc.text(`Mobile: ${d.bdmSignMobile}`, margin, y); y += 5;
-  doc.text(`Email: ${d.bdmSignEmail}`, margin, y);
+  // --- Page composition decision ----------------------------------------
+  if (letterContentHeight + pricingTablesHeight <= availableHeight) {
+    // Preferred layout: Letter + Pricing together on page one, Billing/Signoff on page two
+    const combinedAB = letterContentHeight + pricingTablesHeight;
+    y = margin + Math.max(0, (availableHeight - combinedAB) / 2);
+    drawLetterContent();
+    drawPricingTables();
+
+    doc.addPage();
+    y = billingSectionHeight < availableHeight
+      ? margin + (availableHeight - billingSectionHeight) / 2
+      : margin;
+    drawBillingSection();
+  } else {
+    // Fallback layout: too many pricing rows to fit with the letter —
+    // revert to Letter alone on page one, Pricing + Billing/Signoff on page two
+    y = margin + Math.max(0, (availableHeight - letterContentHeight) / 2);
+    drawLetterContent();
+
+    doc.addPage();
+    const combinedBC = pricingTablesHeight + billingSectionHeight;
+    y = combinedBC < availableHeight
+      ? margin + (availableHeight - combinedBC) / 2
+      : margin;
+    drawPricingTables();
+    drawBillingSection();
+  }
 
   // Footer on all pages
   addPageFooter();
 
   if (returnDoc) return doc;
-  const baseName = `BioBlue_Quote_${(d.companyName||'Client').replace(/\s+/g,'_')}_${d.quoteNumber||'Q'}`;
+  const baseName = buildQuoteBaseName(d);
   doc.save(baseName + '.pdf');
   showToast('✅ PDF downloaded');
 }
@@ -1203,11 +1298,19 @@ function buildQuoteHTML(d) {
     } catch(e){ return ''; }
   })();
 
-  const bulkTableRows = d.bulkRows.map(r => `
+  const bulkTableRows = d.priceDisplayMode === 'combined'
+    ? d.bulkRows.map(r => `
+    <tr>
+      <td style="border:1px solid #ccc;padding:6px 8px;">${r.depot||'—'}</td>
+      <td style="border:1px solid #ccc;padding:6px 8px;">${BULK_PRODUCT.desc}</td>
+      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;font-weight:bold;">${r.delivered ? r.delivered+'¢/L' : '—'}</td>
+    </tr>`).join('')
+    : d.bulkRows.map(r => `
     <tr>
       <td style="border:1px solid #ccc;padding:6px 8px;">${r.depot||'—'}</td>
       <td style="border:1px solid #ccc;padding:6px 8px;">${BULK_PRODUCT.desc}</td>
       <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;">${r.bulkCpl ? r.bulkCpl+'¢' : '—'}</td>
+      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;">${r.tankHireCpl ? r.tankHireCpl+'¢' : '—'}</td>
       <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;">${r.freightCpl ? r.freightCpl+'¢' : '—'}</td>
       <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;font-weight:bold;">${r.delivered ? r.delivered+'¢' : '—'}</td>
     </tr>`).join('');
@@ -1283,7 +1386,9 @@ ${d.includeBulk && d.bulkRows.length>0 ? `
 <div class="section-title">BioBlue Bulk AdBlue&reg; Supply Proposal</div>
 <table class="pricing-table">
   <thead><tr>
-    <th>Depot / Site</th><th>Product</th><th>Bulk CPL (¢/L)</th><th>Freight CPL (¢/L)</th><th>Delivered CPL (ex GST)</th>
+    ${d.priceDisplayMode === 'combined'
+      ? '<th>Depot / Site</th><th>Product</th><th>Delivered Price (ex GST)</th>'
+      : '<th>Depot / Site</th><th>Product</th><th>Bulk CPL (¢/L)</th><th>Tank Hire CPL (¢/L)</th><th>Freight CPL (¢/L)</th><th>Total CPL (ex GST)</th>'}
   </tr></thead>
   <tbody>${bulkTableRows}</tbody>
 </table>` : ''}
@@ -1321,7 +1426,7 @@ async function downloadWord() {
     if (typeof htmlDocx === 'undefined') { showToast('⚠️ Word library not loaded — try again in a moment'); return; }
     const html = buildQuoteHTML(d);
     const blob = htmlDocx.asBlob(html, { orientation: 'portrait', margins: { top: 1000, right: 1000, bottom: 1000, left: 1000 } });
-    const baseName = `BioBlue_Quote_${d.companyName.replace(/\s+/g,'_')}_${d.quoteNumber||'Q'}`;
+    const baseName = buildQuoteBaseName(d);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = baseName + '.docx';
@@ -1431,14 +1536,48 @@ function buildQuoteRef(counter, companyName, dateStr) {
   return `${qNum}-${slug}-${ddmmyyyy}`;
 }
 
+// Shared filename builder — matches Audit's {Name}.{FormType} dot convention,
+// with a date suffix (DDMMYYYY) as requested. Used everywhere a quote file
+// (PDF, Word, JSON) gets named, so all four save paths stay consistent.
+function buildQuoteBaseName(d) {
+  const nameSlug = (d.companyName || 'Client')
+    .replace(/[^a-zA-Z0-9\s]/g, '').trim().replace(/\s+/g, '_') || 'Client';
+  const qNum = (d.quoteNumber || 'Q').replace(/[^a-zA-Z0-9-]/g, '');
+  const parts = (d.quoteDate || new Date().toISOString().split('T')[0]).split('-');
+  const ddmmyyyy = (parts[2]||'00')+(parts[1]||'00')+(parts[0]||'0000');
+  return `${nameSlug}.Quote_${qNum}_${ddmmyyyy}`;
+}
+
 // =====================================================================
 // EMAIL NOTIFICATION (reuses audit template)
 // =====================================================================
-async function sendQuoteEmail(d, pdfLink, wordLink) {
+// Converts a Blob to a base64 string (no data: prefix) for EmailJS dynamic attachments.
+// See https://www.emailjs.com/docs/user-guide/dynamic-attachments/ — the template itself
+// (dashboard-side) must have "Attachments → Dynamic attachment" enabled and pointed at
+// whichever param name is used below (pdf_attachment), or this param is simply ignored.
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(',')[1] || '');
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// TODO (Michael): EMAILJS_TEMPLATE currently reuses the Audit notification template —
+// its field names (audit_date, auditor_name, site_number, audit_score, photo_count,
+// corrective_actions) don't semantically match Quote data, they're just repurposed.
+// Once a dedicated Quote template exists in the EmailJS dashboard (with its own
+// sensibly-named fields and "Dynamic attachment" enabled on pdf_attachment), swap
+// EMAILJS_TEMPLATE below for the new template ID. Until then this still works exactly
+// as before — the pdf_attachment param is simply unused by the current template.
+async function sendQuoteEmail(d, pdfLink, wordLink, pdfBlob) {
   if (typeof emailjs === 'undefined') { console.warn('EmailJS not loaded'); return; }
-  const bulkSummary = d.bulkRows.map(r =>
-    `  ${r.depot||'—'}: Bulk ${r.bulkCpl||'—'}¢ + Freight ${r.freightCpl||'—'}¢ = ${r.delivered||'—'}¢/L`
-  ).join('\n');
+  const bulkSummary = d.priceDisplayMode === 'combined'
+    ? d.bulkRows.map(r => `  ${r.depot||'—'}: Delivered ${r.delivered||'—'}¢/L`).join('\n')
+    : d.bulkRows.map(r =>
+        `  ${r.depot||'—'}: Bulk ${r.bulkCpl||'—'}¢ + Tank Hire ${r.tankHireCpl||'—'}¢ + Freight ${r.freightCpl||'—'}¢ = ${r.delivered||'—'}¢/L`
+      ).join('\n');
   const pkgSummary = d.pkgRows.map(r =>
     `  ${r.depot||'—'}: ${r.code||'—'} — $${r.unitPrice||'—'}/unit, freight $${r.freightPrice||'—'}/pallet`
   ).join('\n');
@@ -1446,6 +1585,12 @@ async function sendQuoteEmail(d, pdfLink, wordLink) {
     d.includeBulk    && bulkSummary ? 'BULK:\n' + bulkSummary   : '',
     d.includePackaged && pkgSummary ? 'PACKAGED:\n' + pkgSummary : '',
   ].filter(Boolean).join('\n\n') || 'No pricing rows entered.';
+
+  let pdfBase64 = '';
+  if (pdfBlob) {
+    try { pdfBase64 = await blobToBase64(pdfBlob); }
+    catch(e) { console.warn('Could not encode PDF for email attachment (non-fatal, email still sends without it):', e.message); }
+  }
 
   await emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, {
     to_email:           d.bdmSignEmail || 'michael.hodnett@bioblue.com.au',
@@ -1460,6 +1605,7 @@ async function sendQuoteEmail(d, pdfLink, wordLink) {
     failures:           pricingBlock,
     corrective_actions: `PDF: ${pdfLink||'Not saved'}\nWord: ${wordLink||'Not saved'}`,
     message:            `Quote ${d.quoteNumber} for ${d.companyName} has been generated and saved to Google Drive.\n\nReview and approve before forwarding to the client.`,
+    pdf_attachment:     pdfBase64,
   });
 }
 
@@ -1510,7 +1656,7 @@ async function saveToDrive() {
     const quoteRef = buildQuoteRef(counter, d.companyName, d.quoteDate);
     d.quoteNumber  = quoteRef;
     document.getElementById('quoteNumber').value = quoteRef;
-    const baseName = `BioBlue_Quote_${quoteRef}`;
+    const baseName = buildQuoteBaseName(d);
 
     // Upload Word doc
     showToast('📝 Saving Word doc to Drive…');
@@ -1782,20 +1928,30 @@ const _quoteFolderCache = {};
 async function _getOrCreateQFolder(parentId, name) {
   const key = parentId + '::' + name;
   if (_quoteFolderCache[key]) return _quoteFolderCache[key];
-  const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
-    { headers: { Authorization: `Bearer ${gdriveToken}` } });
-  if (!sr.ok) throw new Error(`Folder search failed (${sr.status}) — Drive session may have expired, try reloading`);
-  const sd = await sr.json();
-  if (sd.files?.length) { _quoteFolderCache[key] = sd.files[0].id; return sd.files[0].id; }
-  const cr = await fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST', headers: { Authorization: `Bearer ${gdriveToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] })
-  });
-  if (!cr.ok) throw new Error(`Folder creation failed (${cr.status}) — Drive session may have expired, try reloading`);
-  const created = await cr.json();
-  if (!created.id) throw new Error('Folder creation returned no ID');
-  _quoteFolderCache[key] = created.id;
-  return created.id;
+  // Cache the in-flight promise itself, not just the eventual result, so that
+  // checkForQuoteDraft + checkForExistingQuote firing together (unawaited) on page
+  // load share one lookup/create instead of each independently creating a duplicate folder.
+  _quoteFolderCache[key] = (async () => {
+    const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
+      { headers: { Authorization: `Bearer ${gdriveToken}` } });
+    if (!sr.ok) throw new Error(`Folder search failed (${sr.status}) — Drive session may have expired, try reloading`);
+    const sd = await sr.json();
+    if (sd.files?.length) return sd.files[0].id;
+    const cr = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST', headers: { Authorization: `Bearer ${gdriveToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] })
+    });
+    if (!cr.ok) throw new Error(`Folder creation failed (${cr.status}) — Drive session may have expired, try reloading`);
+    const created = await cr.json();
+    if (!created.id) throw new Error('Folder creation returned no ID');
+    return created.id;
+  })();
+  try {
+    return await _quoteFolderCache[key];
+  } catch (e) {
+    delete _quoteFolderCache[key];
+    throw e;
+  }
 }
 
 function hideDraftBanner()    { const b = document.getElementById('draftBanner');         if(b) b.style.display='none'; }
@@ -1818,16 +1974,19 @@ async function saveDraft() {
     const fileName = `BB_Quote_${clientId}_draft.json`;
     const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and '${quoteFolderId}' in parents and trashed=false&fields=files(id)`,
       { headers: { Authorization: `Bearer ${gdriveToken}` } });
+    if (!sr.ok) throw new Error(`Draft lookup failed (${sr.status})`);
     const sd = await sr.json();
     const fm = new FormData();
     if (sd.files?.length) {
       fm.append('metadata', new Blob([JSON.stringify({})], { type: 'application/json' }));
       fm.append('file', blob, fileName);
-      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${sd.files[0].id}?uploadType=multipart`, { method: 'PATCH', headers: { Authorization: `Bearer ${gdriveToken}` }, body: fm });
+      const pr = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${sd.files[0].id}?uploadType=multipart`, { method: 'PATCH', headers: { Authorization: `Bearer ${gdriveToken}` }, body: fm });
+      if (!pr.ok) throw new Error(`Draft update failed (${pr.status})`);
     } else {
       fm.append('metadata', new Blob([JSON.stringify({ name: fileName, parents: [quoteFolderId] })], { type: 'application/json' }));
       fm.append('file', blob, fileName);
-      await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${gdriveToken}` }, body: fm });
+      const cr = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', headers: { Authorization: `Bearer ${gdriveToken}` }, body: fm });
+      if (!cr.ok) throw new Error(`Draft creation failed (${cr.status})`);
     }
     showToast('💾 Draft saved');
   } catch(e) { console.warn('saveDraft:', e); showToast('❌ Draft save failed: ' + e.message); }
@@ -1962,11 +2121,12 @@ function restoreQuoteFields(data) {
   if (data.clientType)  setClientType(data.clientType);
   if (data._contacts?.length) { _loadedContacts = data._contacts; buildContactSelector(_loadedContacts); }
   const bulkBody = document.getElementById('bulkRows');
-  if (bulkBody && data.bulk?.length) { bulkBody.innerHTML=''; data.bulk.forEach(r=>addBulkRow(r.depot,r.bulkCpl,r.freightCpl)); }
+  if (bulkBody && data.bulkRows?.length) { bulkBody.innerHTML=''; data.bulkRows.forEach(r=>addBulkRow(r.depot,r.bulkCpl,r.tankHireCpl,r.freightCpl)); }
   const pkgBody = document.getElementById('packagedRows');
-  if (pkgBody && data.packaged?.length) { pkgBody.innerHTML=''; data.packaged.forEach(r=>addPackagedRow(r.depot,r.product,r.unitPrice,r.freightPrice)); }
+  if (pkgBody && data.pkgRows?.length) { pkgBody.innerHTML=''; data.pkgRows.forEach(r=>addPackagedRow(r.depot,r.code,r.unitPrice,r.freightPrice)); }
   if (data.includeBulk!==undefined) { document.getElementById('includeBulk').checked=data.includeBulk; toggleBulkSection(); }
   if (data.includePackaged!==undefined) { document.getElementById('includePackaged').checked=data.includePackaged; togglePackagedSection(); }
+  if (data.priceDisplayMode) { document.getElementById('priceDisplayCombined').checked = (data.priceDisplayMode === 'combined'); updatePriceDisplayLabels(); }
   updateValidity(); updateProgress();
 }
 
@@ -2042,18 +2202,20 @@ async function emailPDFAndSaveToDrive() {
     const rootData = await rootRes.json();
     const rootFolderId = rootData.files?.[0]?.id;
     const clientFolderId = clientId ? await getClientFolderFromRecord(rootFolderId, clientId, d.companyName||clientId) : rootFolderId;
-    const baseName = (d.quoteNumber||'Quote').replace(/[^a-zA-Z0-9_-]/g,'_');
+    const baseName = buildQuoteBaseName(d);
     showToast('☁️ Saving PDF to Drive...');
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify({ name:baseName+'.pdf', parents:[clientFolderId] })], { type:'application/json' }));
     form.append('file', pdfBlob, baseName+'.pdf');
     const up = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
       { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}` }, body:form });
+    if (!up.ok) throw new Error(`PDF upload failed (${up.status}) — Drive session may have expired, try reloading`);
     const uploaded = await up.json();
+    if (!uploaded.id) throw new Error('PDF upload returned no file ID');
     const quoteFolderId = await _getOrCreateQFolder(clientFolderId, QUOTE_JSON_SUBFOLDER);
     await saveQuoteJSON(quoteFolderId, baseName, d);
     showToast('📧 Emailing to BDM...');
-    await sendQuoteEmail(d, uploaded.webViewLink, '');
+    await sendQuoteEmail(d, uploaded.webViewLink, '', pdfBlob);
     setQuoteStatus('Sent');
     document.getElementById('modalMsg').textContent = `✅ Quote sent!\n\n📧 PDF emailed to ${d.bdmEmail}\n☁️ Saved to Drive\n${uploaded.webViewLink||''}`;
     document.getElementById('modal').classList.add('active');
