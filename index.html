@@ -565,7 +565,7 @@ input:checked + .slider:before{transform:translateX(16px);}
 <!-- STICKY FOOTER -->
 <div class="sticky-footer">
   <button class="btn btn-word" onclick="openQCModal('word')" style="flex:1;">📝 Save Word to Drive</button>
-  <button class="btn btn-drive" onclick="openQCModal('pdf')" style="flex:1;">📧 Email PDF to BDM + Save to Drive</button>
+  <button class="btn btn-drive" onclick="openQCModal('pdf')" style="flex:1;">☁️ Save to Drive</button>
 </div>
 
 <!-- QUALITY CHECK MODAL -->
@@ -963,30 +963,56 @@ async function generatePDF(returnDoc = false) {
   function txt(text, x, fy, opts) { doc.text(text, x, fy, opts); }
 
   // ── FOOTER (drawn on each page via event) ──────────────────────
+  // Page 1 (cover, if present) keeps its existing footer bar untouched,
+  // just with ABN and phone tucked in quietly alongside the website line.
+  // Pages 2+ get a different footer: logo, alphabetical state coverage,
+  // and a page number — excluding the cover from the page count, since a
+  // client reading "Page 1 of 3" on the first real content page is more
+  // natural than "Page 2 of 4".
+  const STATE_COVERAGE = ['ACT','NSW','NT','QLD','SA','TAS','VIC','WA'];
   function addPageFooter() {
     const totalPages = doc.internal.getNumberOfPages();
+    const contentPageCount = _coverPageDrawn ? totalPages - 1 : totalPages;
     for (let i=1; i<=totalPages; i++) {
       doc.setPage(i);
-      // Bottom bar
       doc.setFillColor(...NAVY);
       doc.rect(0, 287, 210, 10, 'F');
       doc.setFillColor(...BLUE);
       doc.rect(0, 285, 210, 2, 'F');
-      doc.setFont('helvetica','normal');
-      doc.setFontSize(7);
-      doc.setTextColor(...WHITE);
-      doc.text('www.bioblue.com.au', margin, 291);
-      // BioBlue logo text in footer
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(9);
-      doc.text('Bio', pageW-margin-20, 291);
-      const bw = doc.getTextWidth('Bio');
-      doc.setTextColor(100, 210, 255);
-      doc.text('Blue', pageW-margin-20+bw, 291);
+
+      const isCoverPage = _coverPageDrawn && i === 1;
+      if (isCoverPage) {
+        doc.setFont('helvetica','normal');
+        doc.setFontSize(7);
+        doc.setTextColor(...WHITE);
+        doc.text('www.bioblue.com.au   \u00b7   ABN 18 642 169 051   \u00b7   1300 211 007', margin, 291);
+        doc.setFont('helvetica','bold');
+        doc.setFontSize(9);
+        doc.text('Bio', pageW-margin-20, 291);
+        const bw = doc.getTextWidth('Bio');
+        doc.setTextColor(100, 210, 255);
+        doc.text('Blue', pageW-margin-20+bw, 291);
+      } else {
+        const pageNum = _coverPageDrawn ? i - 1 : i;
+        doc.setFont('helvetica','bold');
+        doc.setFontSize(9);
+        doc.setTextColor(...WHITE);
+        doc.text('Bio', margin, 291);
+        const bw = doc.getTextWidth('Bio');
+        doc.setTextColor(100, 210, 255);
+        doc.text('Blue', margin+bw, 291);
+
+        doc.setFont('helvetica','normal');
+        doc.setFontSize(7);
+        doc.setTextColor(200, 220, 255);
+        const rightText = `${STATE_COVERAGE.join(' \u00b7 ')}   |   Page ${pageNum} of ${contentPageCount}`;
+        doc.text(rightText, pageW-margin, 291, { align:'right' });
+      }
     }
   }
 
   // ── PAGE 1: COVER (full-bleed photo) ───────────────────────────
+  let _coverPageDrawn = false;
   if (COVER_IMAGE_B64) {
     try {
       doc.addImage('data:image/jpeg;base64,' + COVER_IMAGE_B64, 'JPEG', 0, 0, 210, 297);
@@ -1019,6 +1045,7 @@ async function generatePDF(returnDoc = false) {
         doc.text(d.quoteNumber, pageW - margin, 290, { align: 'right' });
       }
       doc.addPage();
+      _coverPageDrawn = true;
     } catch(e) { console.warn('Cover page failed:', e); }
   }
 
@@ -1115,14 +1142,20 @@ async function generatePDF(returnDoc = false) {
     y += 12;
   }
   function tableHdr(cols) {
-    chk(8);
+    const hasTwoLine = cols.some(c => Array.isArray(c.label));
+    const hdrHeight = hasTwoLine ? 11 : 7;
+    chk(hdrHeight + 1);
     const totalW = cols.reduce((s,c)=>s+c.w,0);
     doc.setFillColor(...NAVY);
-    doc.rect(margin, y, totalW, 7, 'F');
+    doc.rect(margin, y, totalW, hdrHeight, 'F');
     doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...WHITE);
     let cx = margin;
-    cols.forEach(col => { doc.text(col.label, cx+2, y+4.8); cx+=col.w; });
-    y += 7;
+    cols.forEach(col => {
+      const lines = Array.isArray(col.label) ? col.label : [col.label];
+      lines.forEach((line, li) => doc.text(line, cx+2, y+4.8+li*4.2));
+      cx += col.w;
+    });
+    y += hdrHeight;
   }
   function tableRow(cols, values, shade) {
     chk(7);
@@ -1142,17 +1175,17 @@ async function generatePDF(returnDoc = false) {
   }
 
   let pricingTablesHeight = 0;
-  if (d.includeBulk && d.bulkRows.length > 0)      pricingTablesHeight += 12 + 7 + d.bulkRows.length*7 + 6;
-  if (d.includePackaged && d.pkgRows.length > 0)   pricingTablesHeight += 12 + 7 + d.pkgRows.length*7 + 6;
+  if (d.includeBulk && d.bulkRows.length > 0)      pricingTablesHeight += 12 + 11 + d.bulkRows.length*7 + 6;
+  if (d.includePackaged && d.pkgRows.length > 0)   pricingTablesHeight += 12 + 11 + d.pkgRows.length*7 + 6;
 
   function drawPricingTables() {
     if (d.includeBulk && d.bulkRows.length > 0) {
       secHdr('BIOBLUE BULK ADBLUE\u00ae SUPPLY PROPOSAL');
       if (d.priceDisplayMode === 'combined') {
         const bCols = [
-          {label:'Depot / Site',              w:70},
-          {label:'Product',                   w:70},
-          {label:'Delivered Price (ex GST)',  w:cW-140},
+          {label:'Depot / Site',                  w:70},
+          {label:'Product',                       w:70},
+          {label:['Delivered Price','(ex GST)'],  w:cW-140},
         ];
         tableHdr(bCols);
         d.bulkRows.forEach((row, i) => {
@@ -1160,12 +1193,12 @@ async function generatePDF(returnDoc = false) {
         });
       } else {
         const bCols = [
-          {label:'Depot / Site',          w:36},
-          {label:'Product',               w:42},
-          {label:'Bulk CPL (¢/L)',        w:24},
-          {label:'Tank Hire CPL (¢/L)',   w:26},
-          {label:'Freight CPL (¢/L)',     w:24},
-          {label:'Total CPL (ex GST)',    w:cW-152},
+          {label:'Depot / Site',            w:36},
+          {label:'Product',                 w:42},
+          {label:['Bulk','cpl'],            w:24},
+          {label:['Tank Hire','cpl'],       w:26},
+          {label:['Freight','cpl'],         w:24},
+          {label:['Total cpl','(ex GST)'],  w:cW-152},
         ];
         tableHdr(bCols);
         d.bulkRows.forEach((row, i) => {
@@ -1185,11 +1218,11 @@ async function generatePDF(returnDoc = false) {
       chk(20);
       secHdr('BIOBLUE PACKAGED ADBLUE\u00ae SUPPLY PROPOSAL');
       const pCols = [
-        {label:'Depot / Site',       w:38},
-        {label:'Product Code',       w:34},
-        {label:'Description',        w:52},
-        {label:'Unit Price (ex GST)',w:30},
-        {label:'Freight ($/pallet)', w:cW-154},
+        {label:'Depot / Site',                       w:30},
+        {label:'Product Code',                       w:26},
+        {label:'Description',                        w:38},
+        {label:['Unit Price','(ex GST)'],             w:32},
+        {label:['Freight','($ per pallet space)'],    w:cW-126},
       ];
       tableHdr(pCols);
       d.pkgRows.forEach((row, i) => {
@@ -1258,9 +1291,7 @@ async function generatePDF(returnDoc = false) {
     drawPricingTables();
 
     doc.addPage();
-    y = billingSectionHeight < availableHeight
-      ? margin + (availableHeight - billingSectionHeight) / 2
-      : margin;
+    y = margin; // letter-style: starts at the top, not vertically centred
     drawBillingSection();
   } else {
     // Fallback layout: too many pricing rows to fit with the letter —
@@ -1269,10 +1300,7 @@ async function generatePDF(returnDoc = false) {
     drawLetterContent();
 
     doc.addPage();
-    const combinedBC = pricingTablesHeight + billingSectionHeight;
-    y = combinedBC < availableHeight
-      ? margin + (availableHeight - combinedBC) / 2
-      : margin;
+    y = margin; // letter-style: starts at the top, not vertically centred
     drawPricingTables();
     drawBillingSection();
   }
@@ -1387,8 +1415,8 @@ ${d.includeBulk && d.bulkRows.length>0 ? `
 <table class="pricing-table">
   <thead><tr>
     ${d.priceDisplayMode === 'combined'
-      ? '<th>Depot / Site</th><th>Product</th><th>Delivered Price (ex GST)</th>'
-      : '<th>Depot / Site</th><th>Product</th><th>Bulk CPL (¢/L)</th><th>Tank Hire CPL (¢/L)</th><th>Freight CPL (¢/L)</th><th>Total CPL (ex GST)</th>'}
+      ? '<th>Depot / Site</th><th>Product</th><th>Delivered Price<br>(ex GST)</th>'
+      : '<th>Depot / Site</th><th>Product</th><th>Bulk<br>cpl</th><th>Tank Hire<br>cpl</th><th>Freight<br>cpl</th><th>Total cpl<br>(ex GST)</th>'}
   </tr></thead>
   <tbody>${bulkTableRows}</tbody>
 </table>` : ''}
@@ -1397,7 +1425,7 @@ ${d.includePackaged && d.pkgRows.length>0 ? `
 <div class="section-title">BioBlue Packaged AdBlue&reg; Supply Proposal</div>
 <table class="pricing-table">
   <thead><tr>
-    <th>Depot / Site</th><th>Product Code</th><th>Description</th><th>Unit Price (ex GST)</th><th>Freight ($/pallet)</th>
+    <th>Depot / Site</th><th>Product Code</th><th>Description</th><th>Unit Price<br>(ex GST)</th><th>Freight<br>($ per pallet space)</th>
   </tr></thead>
   <tbody>${pkgTableRows}</tbody>
 </table>` : ''}
@@ -1548,6 +1576,134 @@ function buildQuoteBaseName(d) {
   return `${nameSlug}.Quote_${qNum}_${ddmmyyyy}`;
 }
 
+// Shared gate for minting a real sequential quote number. Both saveToDrive()
+// and emailPDFAndSaveToDrive() call this first, so a number is only ever
+// minted once per quote per session, regardless of which save path (or both,
+// one after the other) is used:
+//   - Recalled a past quote and are now saving/sending it -> treat as a
+//     revision: mint a NEW number, report what it supersedes.
+//   - Brand new quote, first real save this session -> mint a number.
+//   - Already minted a number earlier this session -> reuse it, don't re-mint.
+// Returns { quoteNumber, supersedes } - supersedes is the old quote number
+// being revised, or null for an original quote.
+async function ensureQuoteNumber(d) {
+  const field = document.getElementById('quoteNumber');
+  if (_isRevision) {
+    const counter  = await getNextQuoteCounter();
+    const quoteRef = buildQuoteRef(counter, d.companyName, d.quoteDate);
+    const supersedes = _recalledQuoteNumber;
+    d.quoteNumber = quoteRef;
+    if (field) field.value = quoteRef;
+    _isRevision = false;
+    _recalledQuoteNumber = null;
+    _realQuoteNumberMinted = true;
+    _quoteJsonFileId = null; // this is a new quote, not an overwrite of the recalled one's JSON
+    return { quoteNumber: quoteRef, supersedes };
+  }
+  if (!_realQuoteNumberMinted) {
+    const counter  = await getNextQuoteCounter();
+    const quoteRef = buildQuoteRef(counter, d.companyName, d.quoteDate);
+    d.quoteNumber = quoteRef;
+    if (field) field.value = quoteRef;
+    _realQuoteNumberMinted = true;
+    return { quoteNumber: quoteRef, supersedes: null };
+  }
+  d.quoteNumber = field?.value?.trim() || d.quoteNumber;
+  return { quoteNumber: d.quoteNumber, supersedes: null };
+}
+
+// =====================================================================
+// QUOTES LOG - one row per quote in the shared client-records workbook
+// =====================================================================
+const QUOTES_LOG_SHEET = 'Quotes Log';
+const QUOTES_LOG_HEADERS = [
+  'Quote Number','Client ID','Company','Quote Date','BDM Name','Status',
+  'Bulk','Packaged','Supersedes','PDF Link','Word Doc Link','JSON File ID','Last Modified'
+];
+
+// Calls are serialized through this queue so two saves in quick succession
+// (e.g. Save Word Doc then Send Quote moments later) don't both read the
+// workbook before either has written back, which would lose one of the rows.
+// This protects against same-session races only - a genuinely simultaneous
+// save from a different BDM on a different device could still race, since
+// there's no cross-session locking on a single Excel file. Worth knowing,
+// not something this fix can fully close.
+let _quotesLogQueue = Promise.resolve();
+function upsertQuoteLogRow(opts) {
+  _quotesLogQueue = _quotesLogQueue
+    .then(() => _upsertQuoteLogRowInner(opts))
+    .catch(e => console.warn('Quotes Log update failed (non-fatal):', e.message));
+  return _quotesLogQueue;
+}
+
+async function _upsertQuoteLogRowInner({ quoteNumber, supersedes, d, pdfLink, wordLink, jsonFileId, status }) {
+  const rootFolderId = await getFolderId();
+  const fileId = await getAdminSheetId(rootFolderId);
+  if (!fileId) { console.warn('Quotes Log: client records workbook not found yet - skipping log entry'); return; }
+
+  const dl = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: { Authorization: `Bearer ${gdriveToken}` } });
+  if (!dl.ok) throw new Error(`Workbook download failed (${dl.status})`);
+  const ab = await dl.arrayBuffer();
+  const wb = XLSX.read(new Uint8Array(ab), { type: 'array' });
+
+  let ws = wb.Sheets[QUOTES_LOG_SHEET];
+  let rows = ws ? XLSX.utils.sheet_to_json(ws, { header: 1 }) : [QUOTES_LOG_HEADERS.slice()];
+  if (!rows.length) rows = [QUOTES_LOG_HEADERS.slice()];
+  const hdrs = rows[0];
+  const col = name => hdrs.indexOf(name);
+
+  const clientId = new URLSearchParams(window.location.search).get('client') || '';
+  const nowIso = new Date().toISOString();
+
+  // If this quote supersedes a prior one, flip that row's status to Revised -
+  // only meaningful the first time this row is created, but harmless to repeat.
+  if (supersedes) {
+    const qCol = col('Quote Number'), stCol = col('Status');
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][qCol] === supersedes) { rows[i][stCol] = 'Revised'; break; }
+    }
+  }
+
+  // Find existing row for this quote number - update in place rather than
+  // duplicating a row every time the same quote is saved again this session.
+  const qCol = col('Quote Number');
+  let rowIdx = -1;
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][qCol] === quoteNumber) { rowIdx = i; break; }
+  }
+
+  const rowData = [];
+  rowData[col('Quote Number')]   = quoteNumber;
+  rowData[col('Client ID')]      = clientId;
+  rowData[col('Company')]        = d.companyName || '';
+  rowData[col('Quote Date')]     = d.quoteDate || '';
+  rowData[col('BDM Name')]       = d.bdmName || '';
+  rowData[col('Status')]         = status || 'Sent';
+  rowData[col('Bulk')]           = d.includeBulk ? 'Y' : 'N';
+  rowData[col('Packaged')]       = d.includePackaged ? 'Y' : 'N';
+  rowData[col('Supersedes')]     = supersedes || (rowIdx>=0 ? rows[rowIdx][col('Supersedes')] : '') || '';
+  rowData[col('PDF Link')]       = pdfLink  || (rowIdx>=0 ? rows[rowIdx][col('PDF Link')]  : '') || '';
+  rowData[col('Word Doc Link')]  = wordLink || (rowIdx>=0 ? rows[rowIdx][col('Word Doc Link')] : '') || '';
+  rowData[col('JSON File ID')]   = jsonFileId || (rowIdx>=0 ? rows[rowIdx][col('JSON File ID')] : '') || '';
+  rowData[col('Last Modified')]  = nowIso;
+
+  if (rowIdx >= 0) rows[rowIdx] = rowData;
+  else rows.push(rowData);
+
+  const newWs = XLSX.utils.aoa_to_sheet(rows);
+  wb.Sheets[QUOTES_LOG_SHEET] = newWs;
+  if (!wb.SheetNames.includes(QUOTES_LOG_SHEET)) wb.SheetNames.push(QUOTES_LOG_SHEET);
+
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const fm = new FormData();
+  fm.append('metadata', new Blob([JSON.stringify({})], { type: 'application/json' }));
+  fm.append('file', blob, CLIENT_RECORDS_NAME);
+  const up = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`,
+    { method: 'PATCH', headers: { Authorization: `Bearer ${gdriveToken}` }, body: fm });
+  if (!up.ok) throw new Error(`Quotes Log save failed (${up.status})`);
+}
+
 // =====================================================================
 // EMAIL NOTIFICATION (reuses audit template)
 // =====================================================================
@@ -1650,12 +1806,9 @@ async function saveToDrive() {
       ? await getClientFolderFromRecord(rootFolderId, clientId, clientFolderName)
       : await getOrCreateClientFolder(rootFolderId, clientFolderName);
 
-    // Get real sequential quote number
+    // Get real sequential quote number (or reuse one already minted this session)
     showToast('🔢 Generating quote number…');
-    const counter  = await getNextQuoteCounter();
-    const quoteRef = buildQuoteRef(counter, d.companyName, d.quoteDate);
-    d.quoteNumber  = quoteRef;
-    document.getElementById('quoteNumber').value = quoteRef;
+    const { quoteNumber: quoteRef, supersedes } = await ensureQuoteNumber(d);
     const baseName = buildQuoteBaseName(d);
 
     // Upload Word doc
@@ -1664,13 +1817,18 @@ async function saveToDrive() {
 
     // Save JSON backup
     let _jsonWarning = '';
+    let jsonFileId = null;
     try {
       const quoteFolderId = await _getOrCreateQFolder(clientFolderId, QUOTE_JSON_SUBFOLDER);
-      await saveQuoteJSON(quoteFolderId, baseName, d);
+      jsonFileId = await saveQuoteJSON(quoteFolderId, baseName, d);
     } catch(jsonErr) {
       console.error('Quote JSON save failed:', jsonErr);
       _jsonWarning = `\n\n⚠️ JSON backup failed: ${jsonErr.message}\n(Word doc is safe on Drive — but Recall/Load Draft won't find this quote until the JSON saves successfully)`;
     }
+
+    // Log this quote (real save, not a draft) — updates in place if this
+    // quote number was already logged earlier this session
+    upsertQuoteLogRow({ quoteNumber: quoteRef, supersedes, d, pdfLink: null, wordLink, jsonFileId, status: _quoteStatus });
 
     document.getElementById('modalTitle').textContent = '✅ Word Doc Saved';
     document.getElementById('modalMsg').textContent =
@@ -1925,6 +2083,12 @@ let _quoteJsonFileId  = null;
 const QUOTE_JSON_SUBFOLDER = 'Quote Data';
 const _quoteFolderCache = {};
 
+// Revision tracking — set when a past quote is recalled, consumed the next
+// time a real quote number is minted (see ensureQuoteNumber below).
+let _recalledQuoteNumber   = null;
+let _isRevision            = false;
+let _realQuoteNumberMinted = false;
+
 async function _getOrCreateQFolder(parentId, name) {
   const key = parentId + '::' + name;
   if (_quoteFolderCache[key]) return _quoteFolderCache[key];
@@ -2099,6 +2263,9 @@ async function selectQuoteFile(fileId) {
     const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: { Authorization: `Bearer ${gdriveToken}` } });
     const data = await res.json();
     _quoteJsonFileId = fileId;
+    _recalledQuoteNumber = data.quoteNumber || null;
+    _isRevision = true;
+    _realQuoteNumberMinted = true; // recalled quote already has a real number
     restoreQuoteFields(data);
     showToast('✅ Quote loaded');
   } catch(e) { showToast('❌ Could not load: ' + e.message); }
@@ -2134,7 +2301,11 @@ async function saveQuoteJSON(quoteFolderId, baseName, d) {
   const fileName = baseName + '_quote_data.json';
   const blob = new Blob([JSON.stringify({ ...d, quoteStatus: _quoteStatus, _contacts: _loadedContacts, _savedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
   if (!_quoteJsonFileId) {
-    const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name contains '_quote_data.json' and '${quoteFolderId}' in parents and trashed=false&fields=files(id)`,
+    // Exact-name match, not a generic "contains '_quote_data.json'" search —
+    // that used to match ANY quote's JSON in this client's folder and
+    // silently overwrite a different quote's data. The filename already
+    // includes the unique quote number, so an exact match is unambiguous.
+    const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${fileName.replace(/'/g,"\\'")}' and '${quoteFolderId}' in parents and trashed=false&fields=files(id)`,
       { headers: { Authorization: `Bearer ${gdriveToken}` } });
     if (!sr.ok) throw new Error(`JSON lookup failed (${sr.status})`);
     const sd = await sr.json();
@@ -2159,6 +2330,7 @@ async function saveQuoteJSON(quoteFolderId, baseName, d) {
     fetch(`https://www.googleapis.com/drive/v3/files/${_quoteDraftFileId}`, { method:'DELETE', headers:{Authorization:`Bearer ${gdriveToken}`} }).catch(()=>{});
     _quoteDraftFileId = null;
   }
+  return _quoteJsonFileId;
 }
 
 // =====================================================================
@@ -2171,7 +2343,7 @@ function openQCModal(action) {
   updateQCBtn();
   document.getElementById('qcModal')?.classList.add('active');
   const btn = document.getElementById('qcSubmitBtn');
-  if (btn) btn.textContent = action === 'word' ? '📝 Save Word to Drive' : '📧 Email PDF + Save to Drive';
+  if (btn) btn.textContent = action === 'word' ? '📝 Save Word to Drive' : '☁️ Save to Drive';
 }
 function closeQCModal() { document.getElementById('qcModal')?.classList.remove('active'); }
 function updateQCBtn() {
@@ -2192,9 +2364,16 @@ function confirmQCAndSubmit() {
 async function emailPDFAndSaveToDrive() {
   showToast('⏳ Generating PDF...');
   try {
+    let d = collectData();
+    if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
+    // Mint/reuse the quote number BEFORE generating the PDF, so the PDF's
+    // own quote-number field and the filename are guaranteed to match —
+    // previously the PDF was generated before this ran, so it could carry
+    // a stale number if this was the first save action of the session.
+    const { quoteNumber: quoteRef, supersedes } = await ensureQuoteNumber(d);
     const doc = await generatePDF(true);
     const pdfBlob = doc.output('blob');
-    const d = collectData();
+    d = collectData(); // re-read now the quoteNumber field reflects ensureQuoteNumber's result
     await getDriveToken();
     const clientId = new URLSearchParams(window.location.search).get('client');
     const rootRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${GDRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
@@ -2213,11 +2392,16 @@ async function emailPDFAndSaveToDrive() {
     const uploaded = await up.json();
     if (!uploaded.id) throw new Error('PDF upload returned no file ID');
     const quoteFolderId = await _getOrCreateQFolder(clientFolderId, QUOTE_JSON_SUBFOLDER);
-    await saveQuoteJSON(quoteFolderId, baseName, d);
-    showToast('📧 Emailing to BDM...');
-    await sendQuoteEmail(d, uploaded.webViewLink, '', pdfBlob);
+    const jsonFileId = await saveQuoteJSON(quoteFolderId, baseName, d);
+    // TODO: email-to-BDM is parked for now per Michael's instruction — button
+    // is relabeled "Save to Drive" to match. Re-enable this call once the
+    // dedicated Quote EmailJS template + PDF attachment work (banked) is
+    // done, rather than silently emailing something the button no longer
+    // says it will do.
+    // await sendQuoteEmail(d, uploaded.webViewLink, '', pdfBlob);
     setQuoteStatus('Sent');
-    document.getElementById('modalMsg').textContent = `✅ Quote sent!\n\n📧 PDF emailed to ${d.bdmEmail}\n☁️ Saved to Drive\n${uploaded.webViewLink||''}`;
+    upsertQuoteLogRow({ quoteNumber: quoteRef, supersedes, d, pdfLink: uploaded.webViewLink, wordLink: null, jsonFileId, status: 'Sent' });
+    document.getElementById('modalMsg').textContent = `✅ Quote saved to Drive!\n\n📋 ${quoteRef}\n🏢 ${d.companyName}\n\n${uploaded.webViewLink||''}`;
     document.getElementById('modal').classList.add('active');
   } catch(e) { showToast('❌ Failed: ' + e.message); }
 }
@@ -2237,6 +2421,10 @@ function clearAll() {
   setClientType('new');
   setQuoteStatus('Draft');
   _loadedContacts = [];
+  _quoteJsonFileId = null;
+  _recalledQuoteNumber = null;
+  _isRevision = false;
+  _realQuoteNumberMinted = false;
   const sw = document.getElementById('contactSelectorWrap');
   if (sw) sw.style.display = 'none';
   generateQuoteNumber();
