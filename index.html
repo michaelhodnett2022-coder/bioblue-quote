@@ -1826,9 +1826,25 @@ async function uploadWordToDrive(clientFolderId, baseName, d) {
 // =====================================================================
 // DRIVE — save PDF + Word to client folder, then email BDM
 // =====================================================================
+// Bulk CPL and Freight CPL must always exist together on every row — one
+// without the other produces an incomplete/incorrect delivered price.
+// Shared by both save paths so the rule can't drift between them.
+function validateBulkPricing(d) {
+  for (let i = 0; i < d.bulkRows.length; i++) {
+    const row = d.bulkRows[i];
+    if ((row.bulkCpl && !row.freightCpl) || (!row.bulkCpl && row.freightCpl)) {
+      const label = row.depot || `Row ${i+1}`;
+      return `⚠️ ${label}: Bulk CPL and Freight CPL must both be filled in, or both left blank`;
+    }
+  }
+  return null;
+}
+
 async function saveToDrive() {
   const d = collectData();
   if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
+  const _bulkErr = validateBulkPricing(d);
+  if (_bulkErr) { showToast(_bulkErr); return; }
   const clientId = new URLSearchParams(window.location.search).get('client');
 
   showToast('☁️ Connecting to Google…');
@@ -2426,6 +2442,8 @@ async function emailPDFAndSaveToDrive() {
   try {
     let d = collectData();
     if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
+    const _bulkErr = validateBulkPricing(d);
+    if (_bulkErr) { showToast(_bulkErr); return; }
     // Mint/reuse the quote number BEFORE generating the PDF, so the PDF's
     // own quote-number field and the filename are guaranteed to match —
     // previously the PDF was generated before this ran, so it could carry
