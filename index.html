@@ -1939,7 +1939,7 @@ async function getFolderId() {
 }
 
 async function getOrCreateClientFolder(parentId, name) {
-  const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
+  const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`)}&fields=files(id)`,
     { headers:{ Authorization:`Bearer ${gdriveToken}` } });
   const sd = await sr.json();
   if (sd.files && sd.files.length) return sd.files[0].id;
@@ -2181,7 +2181,7 @@ async function _getOrCreateQFolder(parentId, name) {
   // checkForQuoteDraft + checkForExistingQuote firing together (unawaited) on page
   // load share one lookup/create instead of each independently creating a duplicate folder.
   _quoteFolderCache[key] = (async () => {
-    const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
+    const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${name.replace(/'/g,"\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`)}&fields=files(id)`,
       { headers: { Authorization: `Bearer ${gdriveToken}` } });
     if (!sr.ok) throw new Error(`Folder search failed (${sr.status}) — Drive session may have expired, try reloading`);
     const sd = await sr.json();
