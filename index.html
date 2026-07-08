@@ -306,6 +306,7 @@ input:checked + .slider:before{transform:translateX(16px);}
             <option>Derek Page</option>
             <option>Angelo Sayas</option>
             <option>Kevin Goverd</option>
+            <option>Brad Ryan</option>
           </select>
         </div>
         <div class="field-group">
@@ -622,12 +623,19 @@ const EMAILJS_PUBLIC_KEY = 'VOzIE82-mIbrEcuPK';
 const EMAILJS_SERVICE    = 'service_f0s6xv5';
 const EMAILJS_TEMPLATE   = 'template_9wr2vra'; // reuses audit notification template
 let gdriveToken = null;
+// Holds the client's actual Generated Site Name (what their Drive folder is
+// really named), fetched once a client loads. Quote Builder has no naming-
+// convention field of its own, so this is the only reliable source for the
+// correct folder-fallback name — using companyName/clientId instead (as this
+// used to) doesn't match the folder's real name and can create a duplicate.
+let _clientGeneratedSiteName = '';
 
 const BDMS = {
   'Michael Hodnett': { email:'michael.hodnett@bioblue.com.au', mobile:'0427 670 726',  title:'Business Development Manager (WA)' },
   'Derek Page':      { email:'derek.page@bioblue.com.au',      mobile:'+61 456 895 522',title:'Business Development Manager' },
   'Angelo Sayas':    { email:'angelo.sayas@bioblue.com.au',    mobile:'+61 459 884 407',title:'Business Development Manager' },
   'Kevin Goverd':    { email:'kevin.goverd@bioblue.com.au',    mobile:'0474 366 288',   title:'Business Development Manager' },
+  'Brad Ryan':       { email:'brad@bioblue.com.au',            mobile:'',               title:'Managing Director' }, // TODO: mobile number not on file — add when known
 };
 
 // Bulk — single product code, multiple sites each with own CPL rates
@@ -749,28 +757,28 @@ function addBulkRow(depot='', bulkCpl='', tankHireCpl='', freightCpl='') {
       <div style="position:relative;">
         <input type="text" id="${id}_bulk" placeholder="e.g. 65" value="${bulkCpl}"
           oninput="calcBulkDelivered('${id}');updateProgress()" style="padding-right:30px;text-align:right;">
-        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">¢/L</span>
+        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">cpl</span>
       </div>
     </td>
     <td>
       <div style="position:relative;">
         <input type="text" id="${id}_tankhire" placeholder="e.g. 5" value="${tankHireCpl}"
           oninput="calcBulkDelivered('${id}');updateProgress()" style="padding-right:30px;text-align:right;">
-        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">¢/L</span>
+        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">cpl</span>
       </div>
     </td>
     <td>
       <div style="position:relative;">
         <input type="text" id="${id}_freight" placeholder="e.g. 8" value="${freightCpl}"
           oninput="calcBulkDelivered('${id}');updateProgress()" style="padding-right:30px;text-align:right;">
-        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">¢/L</span>
+        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">cpl</span>
       </div>
     </td>
     <td>
       <div style="position:relative;">
         <input type="text" id="${id}_delivered" placeholder="—" readonly
           style="padding-right:30px;text-align:right;background:#f0f4f8;color:var(--navy);font-weight:700;cursor:default;">
-        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">¢/L</span>
+        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">cpl</span>
       </div>
     </td>
     <td style="text-align:center;">
@@ -1851,7 +1859,7 @@ async function saveToDrive() {
   try {
     await getDriveToken();
     const rootFolderId    = await getFolderId();
-    const clientFolderName = d.companyName;
+    const clientFolderName = _clientGeneratedSiteName || d.companyName;
     const clientFolderId   = clientId
       ? await getClientFolderFromRecord(rootFolderId, clientId, clientFolderName)
       : await getOrCreateClientFolder(rootFolderId, clientFolderName);
@@ -2050,6 +2058,7 @@ async function fetchClientDetails(clientId) {
     const get = col => { const i=hdrs.indexOf(col); return (i>-1&&row[i]) ? row[i].toString() : ''; };
     const companyEl = document.getElementById('companyName');
     if (companyEl && get('Billing Entity')) companyEl.value = get('Billing Entity');
+    _clientGeneratedSiteName = get('Site Name') || '';
     const addrEl = document.getElementById('siteAddress');
     if (addrEl && get('Street Address')) addrEl.value = get('Street Address');
     _loadedContacts = [
@@ -2207,7 +2216,7 @@ async function saveDraft() {
       { headers: { Authorization: `Bearer ${gdriveToken}` } });
     const rootData = await rootRes.json();
     if (!rootData.files?.length) throw new Error('Root folder not found');
-    const clientFolderId = await getClientFolderFromRecord(rootData.files[0].id, clientId, clientId);
+    const clientFolderId = await getClientFolderFromRecord(rootData.files[0].id, clientId, _clientGeneratedSiteName || clientId);
     const quoteFolderId = await getQuoteJsonFolder(clientFolderId);
     const d = collectData();
     const blob = new Blob([JSON.stringify({ ...d, quoteStatus: _quoteStatus, _contacts: _loadedContacts, _draftSavedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
@@ -2234,7 +2243,7 @@ async function saveDraft() {
 
 async function checkForQuoteDraft(rootId, clientId) {
   try {
-    const clientFolderId = await getClientFolderFromRecord(rootId, clientId, clientId);
+    const clientFolderId = await getClientFolderFromRecord(rootId, clientId, _clientGeneratedSiteName || clientId);
     if (!clientFolderId) return;
     const qFolderId = await getQuoteJsonFolder(clientFolderId);
     const fileName = `BB_Quote_${clientId}_draft.json`;
@@ -2253,7 +2262,7 @@ async function checkForQuoteDraft(rootId, clientId) {
 async function checkForExistingQuote(rootId, clientId) {
   if (_quoteJsonFileId) return;
   try {
-    const clientFolderId = await getClientFolderFromRecord(rootId, clientId, clientId);
+    const clientFolderId = await getClientFolderFromRecord(rootId, clientId, _clientGeneratedSiteName || clientId);
     if (!clientFolderId) return;
     const qFolderId = await getQuoteJsonFolder(clientFolderId);
     const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name contains '_quote_data.json' and '${qFolderId}' in parents and trashed=false&fields=files(id,modifiedTime)&orderBy=modifiedTime desc`,
@@ -2458,7 +2467,7 @@ async function emailPDFAndSaveToDrive() {
       { headers: { Authorization: `Bearer ${gdriveToken}` } });
     const rootData = await rootRes.json();
     const rootFolderId = rootData.files?.[0]?.id;
-    const clientFolderId = clientId ? await getClientFolderFromRecord(rootFolderId, clientId, d.companyName||clientId) : rootFolderId;
+    const clientFolderId = clientId ? await getClientFolderFromRecord(rootFolderId, clientId, _clientGeneratedSiteName || d.companyName || clientId) : rootFolderId;
     const baseName = buildQuoteBaseName(d);
     const quotesFolderId = await getQuotesOutputFolder(clientFolderId);
     showToast('☁️ Saving PDF to Drive...');
