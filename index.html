@@ -608,6 +608,25 @@ input:checked + .slider:before{transform:translateX(16px);}
   </div>
 </div>
 
+<!-- PROSPECT-REQUIRED GATE — blocks the entire form until a completed
+     Prospect record is confirmed for the loaded client. No close button —
+     this is intentionally not dismissable. -->
+<div class="modal-overlay" id="prospectGate" style="z-index:500;">
+  <div class="modal-box">
+    <h3>🚫 Prospect Form Required</h3>
+    <p id="prospectGateMsg"></p>
+    <div class="modal-actions">
+      <button class="btn-primary" id="prospectGateProspectBtn" style="display:none;background:var(--purple);">
+        Go to Prospect Form
+      </button>
+      <button class="btn-primary" style="background:var(--blue);"
+        onclick="window.location.href='https://michaelhodnett2022-coder.github.io/bioblue-field-tools'">
+        ← Field Tools
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -623,12 +642,35 @@ const EMAILJS_PUBLIC_KEY = 'VOzIE82-mIbrEcuPK';
 const EMAILJS_SERVICE    = 'service_f0s6xv5';
 const EMAILJS_TEMPLATE   = 'template_9wr2vra'; // reuses audit notification template
 let gdriveToken = null;
+// Quote Builder is non-negotiably gated behind a completed Prospect record —
+// true only once that's confirmed for the loaded client. Checked defensively
+// in every save path too, not just the initial page block, in case this
+// state is ever reached some other way.
+let _prospectVerified = false;
 // Holds the client's actual Generated Site Name (what their Drive folder is
 // really named), fetched once a client loads. Quote Builder has no naming-
 // convention field of its own, so this is the only reliable source for the
 // correct folder-fallback name — using companyName/clientId instead (as this
 // used to) doesn't match the folder's real name and can create a duplicate.
 let _clientGeneratedSiteName = '';
+
+function showProspectGate(message, clientIdForLink) {
+  const gate = document.getElementById('prospectGate');
+  const msgEl = document.getElementById('prospectGateMsg');
+  const prospectBtn = document.getElementById('prospectGateProspectBtn');
+  if (msgEl) msgEl.textContent = message;
+  if (prospectBtn) {
+    if (clientIdForLink) {
+      prospectBtn.style.display = 'inline-block';
+      prospectBtn.onclick = () => {
+        window.location.href = 'https://michaelhodnett2022-coder.github.io/bioblue-prospect/?client=' + encodeURIComponent(clientIdForLink);
+      };
+    } else {
+      prospectBtn.style.display = 'none';
+    }
+  }
+  if (gate) gate.classList.add('active');
+}
 
 const BDMS = {
   'Michael Hodnett': { email:'michael.hodnett@bioblue.com.au', mobile:'0427 670 726',  title:'Business Development Manager (WA)' },
@@ -1849,6 +1891,7 @@ function validateBulkPricing(d) {
 }
 
 async function saveToDrive() {
+  if (!_prospectVerified) { showProspectGate('This client has not completed a Prospect form yet. A Quote can only be created once the Prospect form is submitted for this client.', new URLSearchParams(window.location.search).get('client')); return; }
   const d = collectData();
   if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
   const _bulkErr = validateBulkPricing(d);
@@ -1996,7 +2039,11 @@ async function loadClientFromURL() {
   const clientId = params.get('client');
   const banner   = document.getElementById('clientBanner');
   const noBanner = document.getElementById('noClientBanner');
-  if (!clientId) { if(noBanner) noBanner.style.display='flex'; return; }
+  if (!clientId) {
+    if (noBanner) noBanner.style.display='flex';
+    showProspectGate('A Quote must be linked to an existing client. Please go back to Field Tools, select a client, and confirm their Prospect form has been completed first.', null);
+    return;
+  }
   if (banner) {
     banner.style.display = 'flex';
     document.getElementById('bannerClientId').textContent = 'Ref: ' + clientId;
@@ -2054,8 +2101,18 @@ async function fetchClientDetails(clientId) {
     const hdrs= rows[0]||[];
     const idCol = hdrs.indexOf('Client ID');
     const row   = rows.slice(1).find(r => r[idCol]===clientId);
-    if (!row) { showToast('⚠️ Client '+clientId+' not found'); return; }
+    if (!row) {
+      showToast('⚠️ Client '+clientId+' not found');
+      showProspectGate('Client ' + clientId + ' could not be found in the client records — a Prospect form must be completed before a Quote can be created for this client.', clientId);
+      return;
+    }
     const get = col => { const i=hdrs.indexOf(col); return (i>-1&&row[i]) ? row[i].toString() : ''; };
+    const prospectDone = get('Prospect \u2713').trim();
+    if (!prospectDone) {
+      showProspectGate((get('Billing Entity')||clientId) + ' has not completed a Prospect form yet. A Quote can only be created once the Prospect form is submitted for this client.', clientId);
+      return;
+    }
+    _prospectVerified = true;
     const companyEl = document.getElementById('companyName');
     if (companyEl && get('Billing Entity')) companyEl.value = get('Billing Entity');
     _clientGeneratedSiteName = get('Site Name') || '';
@@ -2209,6 +2266,7 @@ function hideExistingBanner() { const b = document.getElementById('existingQuote
 async function saveDraft() {
   const clientId = new URLSearchParams(window.location.search).get('client');
   if (!clientId) { showToast('⚠️ No client loaded — cannot save draft'); return; }
+  if (!_prospectVerified) { showProspectGate('This client has not completed a Prospect form yet. A Quote can only be created once the Prospect form is submitted for this client.', clientId); return; }
   showToast('💾 Saving draft...');
   try {
     await getDriveToken();
@@ -2447,6 +2505,7 @@ function confirmQCAndSubmit() {
 }
 
 async function emailPDFAndSaveToDrive() {
+  if (!_prospectVerified) { showProspectGate('This client has not completed a Prospect form yet. A Quote can only be created once the Prospect form is submitted for this client.', new URLSearchParams(window.location.search).get('client')); return; }
   showToast('⏳ Generating PDF...');
   try {
     let d = collectData();
