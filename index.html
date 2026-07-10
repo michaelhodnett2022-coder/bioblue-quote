@@ -1113,16 +1113,24 @@ async function generatePDF(returnDoc = false) {
       doc.setTextColor(200, 220, 255);
       doc.text('AdBlue® Supply Quotation', 20, 290);
       if (d.companyName) {
-        doc.setFontSize(10);
+        // Genuinely prominent now, not small print — sized dynamically so a
+        // long company name never overflows into the logo on the left.
+        const maxNameWidth = pageW - margin - 95; // leaves clear room for the logo block
+        let nameSize = 18;
         doc.setFont('helvetica','bold');
+        while (nameSize > 10) {
+          doc.setFontSize(nameSize);
+          if (doc.getTextWidth(d.companyName) <= maxNameWidth) break;
+          nameSize -= 1;
+        }
         doc.setTextColor(255,255,255);
-        doc.text(d.companyName, pageW - margin, 282, { align: 'right' });
+        doc.text(d.companyName, pageW - margin, 280, { align: 'right' });
       }
       if (d.quoteNumber) {
-        doc.setFontSize(8);
+        doc.setFontSize(8.5);
         doc.setFont('helvetica','normal');
         doc.setTextColor(200,220,255);
-        doc.text(d.quoteNumber, pageW - margin, 290, { align: 'right' });
+        doc.text(d.quoteNumber, pageW - margin, 289, { align: 'right' });
       }
       doc.addPage();
       _coverPageDrawn = true;
@@ -1249,8 +1257,8 @@ async function generatePDF(returnDoc = false) {
   }
 
   let pricingTablesHeight = 0;
-  if (d.includeBulk && d.bulkRows.length > 0)      pricingTablesHeight += 12 + 11 + d.bulkRows.length*7 + 6;
-  if (d.includePackaged && d.pkgRows.length > 0)   pricingTablesHeight += 12 + 11 + d.pkgRows.length*7 + 6;
+  if (d.includeBulk && d.bulkRows.length > 0)      pricingTablesHeight += 12 + 11 + d.bulkRows.length*7 + 5 + 6;
+  if (d.includePackaged && d.pkgRows.length > 0)   pricingTablesHeight += 12 + 11 + d.pkgRows.length*7 + 5 + 6;
 
   function drawPricingTables() {
     if (d.includeBulk && d.bulkRows.length > 0) {
@@ -1285,6 +1293,10 @@ async function generatePDF(returnDoc = false) {
           ], i%2===1);
         });
       }
+      chk(5);
+      doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(...GRAY);
+      doc.text('All bulk pricing above is quoted ex GST.', margin, y+4);
+      y += 5;
       y += 6;
     }
 
@@ -1306,6 +1318,10 @@ async function generatePDF(returnDoc = false) {
           row.freightPrice? '$'+row.freightPrice : '—',
         ], i%2===1);
       });
+      chk(5);
+      doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(...GRAY);
+      doc.text('All packaged pricing above is quoted ex GST.', margin, y+4);
+      y += 5;
       y += 6;
     }
   }
@@ -1534,7 +1550,7 @@ async function buildQuoteDocxBlob(d) {
             width:{size:4000,type:WidthType.DXA}, shading:{type:ShadingType.CLEAR, fill:NAVY}, borders:borderNone(),
             margins: { top:200, bottom:200, left:100, right:200 },
             children: [
-              new Paragraph({ alignment: AlignmentType.RIGHT, children: [ new TextRun({text:d.companyName||'', bold:true, color:'FFFFFF', size:20}) ] }),
+              new Paragraph({ alignment: AlignmentType.RIGHT, children: [ new TextRun({text:d.companyName||'', bold:true, color:'FFFFFF', size:32}) ] }),
               new Paragraph({ alignment: AlignmentType.RIGHT, spacing:{before:60}, children: [ new TextRun({text:d.quoteNumber||'', color:'C8DCFF', size:14}) ] }),
             ],
           }),
@@ -1625,6 +1641,7 @@ async function buildQuoteDocxBlob(d) {
         ]})
     );
     bulkSection.push(new Table({ width:{size:CONTENT_WIDTH,type:WidthType.DXA}, columnWidths: isCombined?[2500,4138,3000]:[2138,2500,1250,1250,1250,1250], rows:[headerRow,...dataRows] }));
+    bulkSection.push(new Paragraph({ spacing:{before:60}, children:[new TextRun({text:'All bulk pricing above is quoted ex GST.', italics:true, size:14, color:GRAY})] }));
   }
 
   // ---- Packaged pricing table ----
@@ -1638,6 +1655,7 @@ async function buildQuoteDocxBlob(d) {
       dataCell(r.freightPrice?'$'+r.freightPrice:'\u2014',1750,{right:true,shade:i%2===1}),
     ]}));
     pkgSection.push(new Table({ width:{size:CONTENT_WIDTH,type:WidthType.DXA}, columnWidths:[1928,1500,2710,1750,1750], rows:[headerRow,...dataRows] }));
+    pkgSection.push(new Paragraph({ spacing:{before:60}, children:[new TextRun({text:'All packaged pricing above is quoted ex GST.', italics:true, size:14, color:GRAY})] }));
   }
 
   // ---- Billing terms (real bulleted list, not literal bullet characters) ----
