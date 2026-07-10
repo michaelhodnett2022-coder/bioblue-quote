@@ -1357,7 +1357,19 @@ async function generatePDF(returnDoc = false) {
   }
 
   // --- Page composition decision ----------------------------------------
-  if (letterContentHeight + pricingTablesHeight <= availableHeight) {
+  const combinedAll = letterContentHeight + pricingTablesHeight + billingSectionHeight;
+
+  if (combinedAll <= availableHeight) {
+    // True single-page layout: a short enough quote that Letter, Pricing,
+    // AND Billing/Signoff all fit together on page one — no page break at
+    // all. Centering accounts for all three blocks together, not just two,
+    // otherwise a genuinely one-page quote would center as if Billing
+    // wasn't there and leave the wrong amount of space below it.
+    y = margin + Math.min(30, Math.max(0, (availableHeight - combinedAll) / 2));
+    drawLetterContent();
+    drawPricingTables();
+    drawBillingSection();
+  } else if (letterContentHeight + pricingTablesHeight <= availableHeight) {
     // Preferred layout: Letter + Pricing together on page one, Billing/Signoff on page two
     const combinedAB = letterContentHeight + pricingTablesHeight;
     y = margin + Math.min(30, Math.max(0, (availableHeight - combinedAB) / 2));
@@ -1398,9 +1410,186 @@ async function generatePDF(returnDoc = false) {
 }
 
 // =====================================================================
-// WORD DOCUMENT — styled HTML → .docx via html-docx-js
+// WORD DOCUMENT — genuine native Word content via docx.js (NOT html-docx-js)
 // =====================================================================
-function buildQuoteHTML(d) {
+// Builds a real .docx (native paragraphs/tables/runs, including a real
+// embedded cover image) rather than wrapping HTML as an MHTML "altChunk" —
+// that old approach produced a document that rendered fine in some copies
+// of desktop Word but appeared completely empty in Word Online, Google
+// Docs' preview, and most mobile Word apps, since altChunk rendering
+// support is inconsistent across viewers. This mirrors the PDF's layout
+// as closely as native Word formatting allows, since the Word doc is
+// meant to be an editable base the BDM can customise (add images, extra
+// text) before saving as PDF.
+function _b64ToUint8Array(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function buildQuoteDocxBlob(d) {
+  const {
+    Document, Paragraph, TextRun, Table, TableRow, TableCell,
+    BorderStyle, WidthType, AlignmentType, ShadingType,
+    Footer, PageNumber, LevelFormat, Packer, VerticalAlign,
+    ImageRun, PageBreak
+  } = docx;
+
+  const NAVY = '003466';
+  const GRAY = '6B7280';
+  const BORDER_GRAY = 'D1D5DB';
+  const BG_TINT = 'F0F4F8';
+  const BLACK = '1E2A38';
+  const CONTENT_WIDTH = 9638; // twips, ~170mm at 1000-twip margins on A4
+
+  function borderThin() {
+    const b = { style: BorderStyle.SINGLE, size: 4, color: BORDER_GRAY };
+    return { top:b, bottom:b, left:b, right:b };
+  }
+  function borderNone() {
+    const n = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+    return { top:n, bottom:n, left:n, right:n };
+  }
+  function labelCell(text, width) {
+    return new TableCell({
+      width: { size: width, type: WidthType.DXA },
+      shading: { type: ShadingType.CLEAR, fill: BG_TINT },
+      borders: borderThin(),
+      children: [new Paragraph({ children: [new TextRun({ text, bold: true, color: NAVY, size: 20 })] })],
+    });
+  }
+  function valueCell(text, width, colSpan) {
+    return new TableCell({
+      width: { size: width, type: WidthType.DXA },
+      columnSpan: colSpan,
+      shading: { type: ShadingType.CLEAR, fill: BG_TINT },
+      borders: borderThin(),
+      children: [new Paragraph({ children: [new TextRun({ text: text||'', size: 20 })] })],
+    });
+  }
+  function headerCell(text, width) {
+    // Accepts a string (single line) or array of lines — explicit line
+    // breaks at logical word boundaries, rather than letting Word
+    // auto-wrap wherever the column happens to be narrow, which can
+    // split a phrase like "(ex GST)" awkwardly across two lines.
+    const lines = Array.isArray(text) ? text : [text];
+    return new TableCell({
+      width: { size: width, type: WidthType.DXA },
+      shading: { type: ShadingType.CLEAR, fill: NAVY },
+      borders: borderThin(),
+      verticalAlign: VerticalAlign.CENTER,
+      children: lines.map((line,i) => new Paragraph({ spacing: i>0?{before:20}:undefined, children:[new TextRun({ text: line, bold: true, color: 'FFFFFF', size: 16 })] })),
+    });
+  }
+  function dataCell(text, width, opts={}) {
+    return new TableCell({
+      width: { size: width, type: WidthType.DXA },
+      shading: opts.shade ? { type: ShadingType.CLEAR, fill: BG_TINT } : undefined,
+      borders: borderThin(),
+      children: [new Paragraph({
+        alignment: opts.right ? AlignmentType.RIGHT : AlignmentType.LEFT,
+        children: [new TextRun({ text: text||'—', bold: opts.bold, size: 18 })]
+      })],
+    });
+  }
+  function bodyPara(text) {
+    return new Paragraph({ spacing:{ after: 160 }, children: [new TextRun({ text, size: 20, color: BLACK })] });
+  }
+  function sectionTitle(text) {
+    return new Paragraph({
+      spacing: { before: 300, after: 160 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: NAVY } },
+      children: [new TextRun({ text, bold: true, color: NAVY, size: 22 })],
+    });
+  }
+
+  // ---- COVER PAGE — real embedded image + a navy details band underneath,
+  // rather than text floated on top of the image. This is a deliberate
+  // trade-off: true pixel-positioned overlays are fragile across different
+  // Word versions/renderers, and everything here needs to stay reliably
+  // editable by a BDM using completely normal Word interactions (resize
+  // the image, edit the text) rather than fiddly floating text boxes. ----
+  let coverChildren = [];
+  if (typeof COVER_IMAGE_B64 !== 'undefined' && COVER_IMAGE_B64) {
+    try {
+      const coverImageBytes = _b64ToUint8Array(COVER_IMAGE_B64);
+      coverChildren.push(new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [ new ImageRun({ type: 'jpg', data: coverImageBytes, transformation: { width: 660, height: 854 } }) ],
+      }));
+      coverChildren.push(new Table({
+        width: { size: CONTENT_WIDTH, type: WidthType.DXA },
+        columnWidths: [5638, 4000],
+        rows: [ new TableRow({ children: [
+          new TableCell({
+            width:{size:5638,type:WidthType.DXA}, shading:{type:ShadingType.CLEAR, fill:NAVY}, borders:borderNone(),
+            margins: { top:200, bottom:200, left:200, right:100 },
+            children: [
+              new Paragraph({ children: [ new TextRun({text:'Bio',bold:true,color:'FFFFFF',size:32}), new TextRun({text:'Blue',bold:true,color:'64D2FF',size:32}) ] }),
+              new Paragraph({ spacing:{before:60}, children: [ new TextRun({text:'AdBlue\u00ae Supply Quotation', color:'C8DCFF', size:16}) ] }),
+            ],
+          }),
+          new TableCell({
+            width:{size:4000,type:WidthType.DXA}, shading:{type:ShadingType.CLEAR, fill:NAVY}, borders:borderNone(),
+            margins: { top:200, bottom:200, left:100, right:200 },
+            children: [
+              new Paragraph({ alignment: AlignmentType.RIGHT, children: [ new TextRun({text:d.companyName||'', bold:true, color:'FFFFFF', size:20}) ] }),
+              new Paragraph({ alignment: AlignmentType.RIGHT, spacing:{before:60}, children: [ new TextRun({text:d.quoteNumber||'', color:'C8DCFF', size:14}) ] }),
+            ],
+          }),
+        ]})],
+      }));
+      coverChildren.push(new Paragraph({ children: [ new PageBreak() ] }));
+    } catch(e) {
+      console.warn('Cover image failed to embed in Word doc (non-fatal, continuing without it):', e);
+    }
+  }
+
+  // ---- Header: logo + address, borderless table (page 2 onward) ----
+  const headerTable = new Table({
+    width: { size: CONTENT_WIDTH, type: WidthType.DXA },
+    columnWidths: [5000, 4638],
+    rows: [ new TableRow({ children: [
+      new TableCell({
+        width: { size: 5000, type: WidthType.DXA }, borders: borderNone(),
+        children: [new Paragraph({ children: [
+          new TextRun({ text: 'Bio', bold: true, color: NAVY, size: 44 }),
+          new TextRun({ text: 'Blue', bold: true, color: '0055A5', size: 44 }),
+        ]})],
+      }),
+      new TableCell({
+        width: { size: 4638, type: WidthType.DXA }, borders: borderNone(),
+        children: [
+          new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text:'180a Cavan Road', color: GRAY, size:16 })] }),
+          new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text:'DRY CREEK 5094 SA', color: GRAY, size:16 })] }),
+          new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text:'ABN 18 642 169 051', color: GRAY, size:16 })] }),
+          new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text:'1300 211 007', color: GRAY, size:16 })] }),
+          new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text:'sales@bioblue.com.au', color: GRAY, size:16 })] }),
+        ],
+      }),
+    ]})],
+  });
+
+  const divider = new Paragraph({
+    spacing: { before: 100, after: 200 },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: '0055A5' } },
+    children: [new TextRun({ text: '' })],
+  });
+
+  // ---- Client info table ----
+  const clientTable = new Table({
+    width: { size: CONTENT_WIDTH, type: WidthType.DXA },
+    columnWidths: [1600, 3220, 1600, 3218],
+    rows: [
+      new TableRow({ children: [ labelCell('Company', 1600), valueCell(d.companyName, 3220), labelCell('Date', 1600), valueCell(d.quoteDate ? new Date(d.quoteDate+'T12:00:00').toLocaleDateString('en-AU') : '', 3218) ]}),
+      new TableRow({ children: [ labelCell('Attention', 1600), valueCell(d.contactName, 3220), labelCell('Quote #', 1600), valueCell(d.quoteNumber, 3218) ]}),
+      new TableRow({ children: [ labelCell('Email', 1600), valueCell(d.contactEmail, 7638, 3) ]}),
+      new TableRow({ children: [ labelCell('Phone', 1600), valueCell(d.contactPhone, 7638, 3) ]}),
+    ],
+  });
+
+  // ---- Letter paragraphs ----
   const expiryDate = (() => {
     try {
       const e = new Date(d.quoteDate + 'T12:00:00');
@@ -1409,124 +1598,102 @@ function buildQuoteHTML(d) {
     } catch(e){ return ''; }
   })();
 
-  const bulkTableRows = d.priceDisplayMode === 'combined'
-    ? d.bulkRows.map(r => `
-    <tr>
-      <td style="border:1px solid #ccc;padding:6px 8px;">${r.depot||'—'}</td>
-      <td style="border:1px solid #ccc;padding:6px 8px;">${BULK_PRODUCT.desc}</td>
-      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;font-weight:bold;">${r.delivered ? r.delivered+'¢/L' : '—'}</td>
-    </tr>`).join('')
-    : d.bulkRows.map(r => `
-    <tr>
-      <td style="border:1px solid #ccc;padding:6px 8px;">${r.depot||'—'}</td>
-      <td style="border:1px solid #ccc;padding:6px 8px;">${BULK_PRODUCT.desc}</td>
-      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;">${r.bulkCpl ? r.bulkCpl+'¢' : '—'}</td>
-      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;">${r.tankHireCpl ? r.tankHireCpl+'¢' : '—'}</td>
-      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;">${r.freightCpl ? r.freightCpl+'¢' : '—'}</td>
-      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;font-weight:bold;">${r.delivered ? r.delivered+'¢' : '—'}</td>
-    </tr>`).join('');
+  const letterParas = [
+    bodyPara(`Hi ${d.contactName || 'there'},`),
+    bodyPara(`Thank you for your interest in AdBlue\u00ae supply by BioBlue. Please see our formal quotation for VDA Certified AdBlue\u00ae supply below.`),
+  ];
+  if (d.clientType === 'existing') letterParas.push(bodyPara('Thank you for your ongoing support as one of our valued business partners.'));
+  letterParas.push(bodyPara(`Our company\u2019s focus is firmly on our customers, striving to provide the most reliable supply and leading customer service in the Australian AdBlue\u00ae market. BioBlue is a VDA certified AdBlue\u00ae manufacturer compliant with ISO22241 quality assurance requirements. VDA Certificate No. 0004706.`));
+  letterParas.push(bodyPara(`This quote is valid for ${d.validDays||'30'} days from the date of issue${expiryDate ? ' (until '+expiryDate+')' : ''}. Please do not hesitate to contact us with any questions regarding your AdBlue\u00ae supply needs or the information in this quote.`));
 
-  const pkgTableRows = d.pkgRows.map(r => `
-    <tr>
-      <td style="border:1px solid #ccc;padding:6px 8px;">${r.depot||'—'}</td>
-      <td style="border:1px solid #ccc;padding:6px 8px;">${r.code||'—'}</td>
-      <td style="border:1px solid #ccc;padding:6px 8px;">${r.desc||'—'}</td>
-      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;">${r.unitPrice ? '$'+r.unitPrice : '—'}</td>
-      <td style="border:1px solid #ccc;padding:6px 8px;text-align:right;">${r.freightPrice ? '$'+r.freightPrice : '—'}</td>
-    </tr>`).join('');
+  // ---- Bulk pricing table ----
+  let bulkSection = [];
+  if (d.includeBulk && d.bulkRows.length > 0) {
+    bulkSection.push(sectionTitle('BioBlue Bulk AdBlue\u00ae Supply Proposal'));
+    const isCombined = d.priceDisplayMode === 'combined';
+    const headerRow = isCombined
+      ? new TableRow({ children: [headerCell('Depot / Site', 2500), headerCell('Product', 4138), headerCell(['Delivered Price','(ex GST)'], 3000)] })
+      : new TableRow({ children: [headerCell('Depot / Site', 2138), headerCell('Product', 2500), headerCell('Bulk cpl', 1250), headerCell('Tank Hire cpl', 1250), headerCell('Freight cpl', 1250), headerCell(['Total cpl','(ex GST)'], 1250)] });
+    const dataRows = d.bulkRows.map((r,i) => isCombined
+      ? new TableRow({ children: [dataCell(r.depot,2500,{shade:i%2===1}), dataCell(BULK_PRODUCT.desc,4138,{shade:i%2===1}), dataCell(r.delivered?r.delivered+'\u00a2/L':'\u2014',3000,{right:true,bold:true,shade:i%2===1})] })
+      : new TableRow({ children: [
+          dataCell(r.depot,2138,{shade:i%2===1}), dataCell(BULK_PRODUCT.desc,2500,{shade:i%2===1}),
+          dataCell(r.bulkCpl?r.bulkCpl+'\u00a2':'\u2014',1250,{right:true,shade:i%2===1}),
+          dataCell(r.tankHireCpl?r.tankHireCpl+'\u00a2':'\u2014',1250,{right:true,shade:i%2===1}),
+          dataCell(r.freightCpl?r.freightCpl+'\u00a2':'\u2014',1250,{right:true,shade:i%2===1}),
+          dataCell(r.delivered?r.delivered+'\u00a2':'\u2014',1250,{right:true,bold:true,shade:i%2===1}),
+        ]})
+    );
+    bulkSection.push(new Table({ width:{size:CONTENT_WIDTH,type:WidthType.DXA}, columnWidths: isCombined?[2500,4138,3000]:[2138,2500,1250,1250,1250,1250], rows:[headerRow,...dataRows] }));
+  }
 
-  const terms = [d.term1, d.term2, d.term3, d.term4].filter(Boolean)
-    .map(t => `<li style="margin-bottom:6px;">${t}</li>`).join('');
+  // ---- Packaged pricing table ----
+  let pkgSection = [];
+  if (d.includePackaged && d.pkgRows.length > 0) {
+    pkgSection.push(sectionTitle('BioBlue Packaged AdBlue\u00ae Supply Proposal'));
+    const headerRow = new TableRow({ children: [headerCell('Depot / Site',1928), headerCell('Product Code',1500), headerCell('Description',2710), headerCell(['Unit Price','(ex GST)'],1750), headerCell(['Freight','($ per pallet space)'],1750)] });
+    const dataRows = d.pkgRows.map((r,i) => new TableRow({ children: [
+      dataCell(r.depot,1928,{shade:i%2===1}), dataCell(r.code,1500,{shade:i%2===1}), dataCell(r.desc,2710,{shade:i%2===1}),
+      dataCell(r.unitPrice?'$'+r.unitPrice:'\u2014',1750,{right:true,shade:i%2===1}),
+      dataCell(r.freightPrice?'$'+r.freightPrice:'\u2014',1750,{right:true,shade:i%2===1}),
+    ]}));
+    pkgSection.push(new Table({ width:{size:CONTENT_WIDTH,type:WidthType.DXA}, columnWidths:[1928,1500,2710,1750,1750], rows:[headerRow,...dataRows] }));
+  }
 
-  const closingParas = (d.closingComments||'')
-    .split('\n\n').filter(Boolean)
-    .map(p => `<p style="margin:0 0 10px;">${p.replace(/\n/g,'<br>')}</p>`).join('');
+  // ---- Billing terms (real bulleted list, not literal bullet characters) ----
+  const terms = [d.term1, d.term2, d.term3, d.term4].filter(Boolean);
+  const termsParas = terms.map(t => new Paragraph({
+    numbering: { reference: 'terms-bullets', level: 0 },
+    spacing: { after: 80 },
+    children: [new TextRun({ text: t, size: 20, color: BLACK })],
+  }));
 
-  return `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8">
-<style>
-  body { font-family: Arial, sans-serif; font-size: 11pt; color: #1e2a38; margin: 2cm; }
-  .logo-bio { font-size: 28pt; font-weight: bold; color: #003466; }
-  .logo-blue { font-size: 28pt; font-weight: bold; color: #0055a5; }
-  .address-block { text-align: right; font-size: 8pt; color: #6b7280; line-height: 1.6; }
-  .divider { border: none; border-top: 2px solid #0055a5; margin: 12px 0 16px; }
-  .client-table { width: 100%; border-collapse: collapse; background: #f0f4f8; margin-bottom: 20px; }
-  .client-table td { padding: 7px 10px; font-size: 10pt; border: 1px solid #d1d5db; }
-  .client-table .lbl { font-weight: bold; color: #003466; width: 80px; }
-  .section-title { font-size: 12pt; font-weight: bold; color: #003466; margin: 20px 0 10px; border-bottom: 1px solid #003466; padding-bottom: 4px; }
-  .pricing-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-  .pricing-table th { background: #003466; color: white; padding: 8px 10px; font-size: 9pt; text-align: left; }
-  .pricing-table td { border: 1px solid #d1d5db; padding: 7px 10px; font-size: 10pt; }
-  .pricing-table tr:nth-child(even) td { background: #f0f4f8; }
-  .terms-list { padding-left: 20px; }
-  .terms-list li { margin-bottom: 6px; }
-  .signature { margin-top: 24px; }
-  .sig-name { font-weight: bold; font-size: 11pt; color: #003466; }
-  .sig-detail { font-size: 10pt; color: #6b7280; }
-</style>
-</head>
-<body>
+  // ---- Closing comments (optional) ----
+  let closingSection = [];
+  if (d.closingComments) {
+    closingSection.push(sectionTitle('Closing Comments'));
+    d.closingComments.split('\n\n').filter(Boolean).forEach(p => {
+      closingSection.push(new Paragraph({ spacing:{after:160}, children:[new TextRun({text:p,size:20,color:BLACK})] }));
+    });
+  }
 
-<table style="width:100%;margin-bottom:16px;"><tr>
-  <td><span class="logo-bio">Bio</span><span class="logo-blue">Blue</span></td>
-  <td class="address-block">180a Cavan Road<br>DRY CREEK 5094 SA<br>ABN 18 642 169 051<br><br>1300 211 007<br>sales@bioblue.com.au</td>
-</tr></table>
-<hr class="divider">
+  // ---- Sign-off ----
+  const signOff = [
+    new Paragraph({ spacing:{before:300,after:120}, children:[new TextRun({text:'Kindest Regards,',size:20,color:BLACK})] }),
+    new Paragraph({ spacing:{after:60}, children:[new TextRun({text:d.bdmSignName||'Michael Hodnett',bold:true,color:NAVY,size:22})] }),
+    new Paragraph({ spacing:{after:40}, children:[new TextRun({text:d.bdmSignTitle||'Business Development Manager (WA)',color:GRAY,size:18})] }),
+    new Paragraph({ spacing:{after:40}, children:[new TextRun({text:'Mobile: '+(d.bdmSignMobile||''),color:GRAY,size:18})] }),
+    new Paragraph({ children:[new TextRun({text:'Email: '+(d.bdmSignEmail||''),color:GRAY,size:18})] }),
+  ];
 
-<table class="client-table">
-  <tr>
-    <td class="lbl">Company</td><td>${d.companyName||''}</td>
-    <td class="lbl">Date</td><td>${d.quoteDate ? new Date(d.quoteDate+'T12:00:00').toLocaleDateString('en-AU') : ''}</td>
-  </tr>
-  <tr>
-    <td class="lbl">Attention</td><td>${d.contactName||''}</td>
-    <td class="lbl">Quote #</td><td>${d.quoteNumber||''}</td>
-  </tr>
-  <tr><td class="lbl">Email</td><td colspan="3">${d.contactEmail||''}</td></tr>
-  <tr><td class="lbl">Phone</td><td colspan="3">${d.contactPhone||''}</td></tr>
-</table>
+  const wordDoc = new Document({
+    numbering: { config: [{ reference: 'terms-bullets', levels: [{ level:0, format: LevelFormat.BULLET, text:'\u2022', alignment: AlignmentType.LEFT, style:{ paragraph:{ indent:{ left:360, hanging:260 } } } }] }] },
+    sections: [{
+      properties: { page: { margin: { top:1000, right:1000, bottom:1000, left:1000 } } },
+      footers: {
+        default: new Footer({ children: [ new Paragraph({
+          alignment: AlignmentType.RIGHT,
+          children: [ new TextRun({ text: 'BioBlue ACT \u00b7 NSW \u00b7 NT \u00b7 QLD \u00b7 SA \u00b7 TAS \u00b7 VIC \u00b7 WA | Page ', size:14, color:GRAY }),
+                      new TextRun({ children: [PageNumber.CURRENT], size:14, color:GRAY }),
+                      new TextRun({ text: ' of ', size:14, color:GRAY }),
+                      new TextRun({ children: [PageNumber.TOTAL_PAGES], size:14, color:GRAY }) ]
+        })]}),
+      },
+      children: [
+        ...coverChildren,
+        headerTable, divider, clientTable,
+        new Paragraph({ text: '', spacing:{after:120} }),
+        ...letterParas,
+        ...bulkSection, ...pkgSection,
+        sectionTitle('Billing & Payment Terms'),
+        ...termsParas,
+        ...closingSection,
+        ...signOff,
+      ],
+    }],
+  });
 
-<p>Hi ${d.contactName||'there'},</p>
-<p>Thank you for your interest in AdBlue&reg; supply by BioBlue. Please see our formal quotation for VDA Certified AdBlue&reg; supply below.</p>
-${d.clientType==='existing' ? '<p>Thank you for your ongoing support as one of our valued business partners.</p>' : ''}
-<p>Our company&rsquo;s focus is firmly on our customers, striving to provide the most reliable supply and leading customer service in the Australian AdBlue&reg; market. BioBlue is a VDA certified AdBlue&reg; manufacturer compliant with ISO22241 quality assurance requirements. VDA Certificate No. 0004706.</p>
-<p>This quote is valid for ${d.validDays||'30'} days from the date of issue${expiryDate ? ' (until '+expiryDate+')' : ''}. Please do not hesitate to contact us with any questions regarding your AdBlue&reg; supply needs or the information in this quote.</p>
-
-${d.includeBulk && d.bulkRows.length>0 ? `
-<div class="section-title">BioBlue Bulk AdBlue&reg; Supply Proposal</div>
-<table class="pricing-table">
-  <thead><tr>
-    ${d.priceDisplayMode === 'combined'
-      ? '<th>Depot / Site</th><th>Product</th><th>Delivered Price<br>(ex GST)</th>'
-      : '<th>Depot / Site</th><th>Product</th><th>Bulk<br>cpl</th><th>Tank Hire<br>cpl</th><th>Freight<br>cpl</th><th>Total cpl<br>(ex GST)</th>'}
-  </tr></thead>
-  <tbody>${bulkTableRows}</tbody>
-</table>` : ''}
-
-${d.includePackaged && d.pkgRows.length>0 ? `
-<div class="section-title">BioBlue Packaged AdBlue&reg; Supply Proposal</div>
-<table class="pricing-table">
-  <thead><tr>
-    <th>Depot / Site</th><th>Product Code</th><th>Description</th><th>Unit Price<br>(ex GST)</th><th>Freight<br>($ per pallet space)</th>
-  </tr></thead>
-  <tbody>${pkgTableRows}</tbody>
-</table>` : ''}
-
-<div class="section-title">Billing &amp; Payment Terms</div>
-<ul class="terms-list">${terms}</ul>
-
-${d.closingComments ? `<div class="section-title">Closing Comments</div>${closingParas}` : ''}
-
-<div class="signature" style="margin-top:28px;">
-<p>Kindest Regards,</p>
-<p class="sig-name">${d.bdmSignName||'Michael Hodnett'}</p>
-<p class="sig-detail">${d.bdmSignTitle||'Business Development Manager (WA)'}</p>
-<p class="sig-detail">Mobile: ${d.bdmSignMobile||''}</p>
-<p class="sig-detail">Email: ${d.bdmSignEmail||''}</p>
-</div>
-
-</body></html>`;
+  return await Packer.toBlob(wordDoc);
 }
 
 async function downloadWord() {
@@ -1534,9 +1701,8 @@ async function downloadWord() {
   if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
   showToast('⏳ Generating Word document…');
   try {
-    if (typeof htmlDocx === 'undefined') { showToast('⚠️ Word library not loaded — try again in a moment'); return; }
-    const html = buildQuoteHTML(d);
-    const blob = htmlDocx.asBlob(html, { orientation: 'portrait', margins: { top: 1000, right: 1000, bottom: 1000, left: 1000 } });
+    if (typeof docx === 'undefined') { showToast('⚠️ Word library not loaded — try again in a moment'); return; }
+    const blob = await buildQuoteDocxBlob(d);
     const baseName = buildQuoteBaseName(d);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1853,11 +2019,9 @@ async function sendQuoteEmail(d, pdfLink, wordLink, pdfBlob) {
 // WORD DOC DRIVE UPLOAD
 // =====================================================================
 async function uploadWordToDrive(clientFolderId, baseName, d) {
-  if (typeof htmlDocx === 'undefined') return '';
+  if (typeof docx === 'undefined') return '';
   try {
-    const html = buildQuoteHTML(d);
-    const blob = htmlDocx.asBlob(html, { orientation:'portrait',
-      margins:{ top:1000, right:1000, bottom:1000, left:1000 } });
+    const blob = await buildQuoteDocxBlob(d);
     const fm = new FormData();
     fm.append('metadata', new Blob([JSON.stringify({ name:baseName+'.docx', parents:[clientFolderId] })], { type:'application/json' }));
     fm.append('file', blob, baseName+'.docx');
@@ -1890,10 +2054,23 @@ function validateBulkPricing(d) {
   return null;
 }
 
+// A quote with nothing priced shouldn't be generatable — either Bulk or
+// Packaged (or both) needs at least one real row before this can go out.
+function validateHasPricing(d) {
+  const hasBulk = d.includeBulk && d.bulkRows.length > 0;
+  const hasPkg  = d.includePackaged && d.pkgRows.length > 0;
+  if (!hasBulk && !hasPkg) {
+    return '⚠️ Add at least one Bulk or Packaged pricing row before generating this quote';
+  }
+  return null;
+}
+
 async function saveToDrive() {
   if (!_prospectVerified) { showProspectGate('This client has not completed a Prospect form yet. A Quote can only be created once the Prospect form is submitted for this client.', new URLSearchParams(window.location.search).get('client')); return; }
   const d = collectData();
   if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
+  const _pricingErr = validateHasPricing(d);
+  if (_pricingErr) { showToast(_pricingErr); return; }
   const _bulkErr = validateBulkPricing(d);
   if (_bulkErr) { showToast(_bulkErr); return; }
   const clientId = new URLSearchParams(window.location.search).get('client');
@@ -2510,6 +2687,8 @@ async function emailPDFAndSaveToDrive() {
   try {
     let d = collectData();
     if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
+    const _pricingErr = validateHasPricing(d);
+    if (_pricingErr) { showToast(_pricingErr); return; }
     const _bulkErr = validateBulkPricing(d);
     if (_bulkErr) { showToast(_bulkErr); return; }
     // Mint/reuse the quote number BEFORE generating the PDF, so the PDF's
@@ -2590,7 +2769,10 @@ function showToast(msg, dur=2500) {
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<!-- html-docx-js for Word export -->
-<script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
+<!-- docx.js for genuine native Word export — replaces html-docx-js, which
+     wrapped raw HTML as an MHTML altChunk that many viewers (mobile Word,
+     Google Docs preview, Word Online) simply refused to render, appearing
+     as an empty document. This produces real Word paragraphs/tables. -->
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js"></script>
 </body>
 </html>
