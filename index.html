@@ -213,7 +213,6 @@ input:checked + .slider:before{transform:translateX(16px);}
   <div class="header-group">
     <div class="header-group-label">This Quote's Data</div>
     <button class="btn-header-full btn-header-secondary" onclick="confirmClear()">🗑️ Clear Form</button>
-    <button class="btn-header-full btn-header-secondary" onclick="recallPastQuote()">🗂️ Recall Past Quote</button>
     <button class="btn-header-full btn-header-secondary" onclick="saveDraft()">💾 Save Draft</button>
   </div>
 
@@ -242,10 +241,10 @@ input:checked + .slider:before{transform:translateX(16px);}
     <span style="font-size:20px;">ℹ️</span>
     <div style="flex:1;min-width:180px;">
       <div style="font-weight:700;font-size:13.5px;color:#003466;">A quote already exists for this client</div>
-      <div style="font-size:12px;color:#0055a5;">Last issued <span data-existing-date>—</span>. Use Recall to load it — or continue to create a new version.</div>
+      <div style="font-size:12px;color:#0055a5;">Last issued <span data-existing-date>—</span>. Load it to edit, or continue to create a new version.</div>
     </div>
     <div style="display:flex;gap:8px;">
-      <button onclick="recallPastQuote();hideExistingBanner();" style="padding:8px 18px;border-radius:8px;background:#1A9FD4;border:none;font-weight:700;font-size:13px;cursor:pointer;color:white;">🗂️ Recall Past Quote</button>
+      <button onclick="loadExistingSubmission()" style="padding:8px 18px;border-radius:8px;background:#1A9FD4;border:none;font-weight:700;font-size:13px;cursor:pointer;color:white;">📂 Load & Edit This Quote</button>
       <button onclick="hideExistingBanner();" style="padding:8px 14px;border-radius:8px;background:white;border:2px solid #ccc;font-weight:600;font-size:13px;cursor:pointer;color:#666;">Create New Version</button>
     </div>
   </div>
@@ -2118,6 +2117,7 @@ async function saveToDrive() {
     try {
       const quoteFolderId = await getQuoteJsonFolder(clientFolderId);
       jsonFileId = await saveQuoteJSON(quoteFolderId, baseName, d);
+      cleanupQuoteDraftPdf(clientFolderId, clientId).catch(()=>{});
     } catch(jsonErr) {
       console.error('Quote JSON save failed:', jsonErr);
       _jsonWarning = `\n\n⚠️ JSON backup failed: ${jsonErr.message}\n(Word doc is safe on Drive — but Recall/Load Draft won't find this quote until the JSON saves successfully)`;
@@ -2400,6 +2400,7 @@ function setQuoteStatus(status) {
 // =====================================================================
 let _quoteDraftFileId = null;
 let _quoteJsonFileId  = null;
+let _existingSubmissionFileId = null;
 const QUOTE_JSON_SUBFOLDER = 'Quote Data';
 const _quoteFolderCache = {};
 
@@ -2458,6 +2459,40 @@ async function _getOrCreateQFolder(parentId, name) {
 function hideDraftBanner()    { const b = document.getElementById('draftBanner');         if(b) b.style.display='none'; }
 function hideExistingBanner() { const b = document.getElementById('existingQuoteBanner'); if(b) b.style.display='none'; }
 
+// Stamps a diagonal "DRAFT — INCOMPLETE" watermark across every page of a
+// jsPDF document. Only ever applied to the in-progress draft PDF, never to
+// a real submission — makes it unmistakable when browsing the client's
+// Drive folder that this isn't a final quote.
+function stampDraftWatermark(doc) {
+  const tp = doc.getNumberOfPages();
+  for (let p = 1; p <= tp; p++) {
+    doc.setPage(p);
+    doc.setTextColor(230, 120, 120);
+    doc.setFontSize(38);
+    doc.setFont('helvetica', 'bold');
+    doc.text('DRAFT \u2014 INCOMPLETE', 105, 160, { align: 'center', angle: 45 });
+  }
+}
+
+// Deletes the watermarked draft PDF for this client, if one exists. Looked
+// up fresh by exact name rather than relying on stored state, since the
+// page may have been reloaded between saving the draft and completing a
+// real submission — matches the exact-name lookup pattern saveQuoteJSON
+// already uses for the draft JSON, since quote filenames aren't unique
+// enough to use a generic suffix search safely.
+async function cleanupQuoteDraftPdf(clientFolderId, clientId) {
+  try {
+    const quotesFolderId = await getQuotesOutputFolder(clientFolderId);
+    const draftPdfName = `BB_Quote_${clientId}_draft.pdf`;
+    const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${draftPdfName}' and '${quotesFolderId}' in parents and trashed=false&fields=files(id)`,
+      { headers: { Authorization: `Bearer ${gdriveToken}` } });
+    const sd = await sr.json();
+    if (sd.files?.length) {
+      fetch(`https://www.googleapis.com/drive/v3/files/${sd.files[0].id}`, { method:'DELETE', headers:{Authorization:`Bearer ${gdriveToken}`} }).catch(()=>{});
+    }
+  } catch(e) { console.warn('Draft PDF cleanup failed (non-fatal):', e.message); }
+}
+
 async function saveDraft() {
   const clientId = new URLSearchParams(window.location.search).get('client');
   if (!clientId) { showToast('⚠️ No client loaded — cannot save draft'); return; }
@@ -2491,6 +2526,36 @@ async function saveDraft() {
       if (!cr.ok) throw new Error(`Draft creation failed (${cr.status})`);
     }
     showToast('💾 Draft saved');
+
+    // Also save a watermarked draft PDF alongside real quote outputs, in the
+    // same Quotes subfolder a BDM would already check — visible when
+    // browsing directly, not just discoverable by reloading this exact
+    // client on this exact form. Non-fatal: if this step fails, the JSON
+    // draft above has already saved successfully.
+    try {
+      const pdfDoc = await generatePDF(true);
+      stampDraftWatermark(pdfDoc);
+      const pdfBlob = pdfDoc.output('blob');
+      const quotesFolderId = await getQuotesOutputFolder(clientFolderId);
+      const draftPdfName = `BB_Quote_${clientId}_draft.pdf`;
+      const existingSr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${draftPdfName}' and '${quotesFolderId}' in parents and trashed=false&fields=files(id)`,
+        { headers: { Authorization: `Bearer ${gdriveToken}` } });
+      const existingSd = await existingSr.json();
+      const pfm = new FormData();
+      if (existingSd.files?.length) {
+        pfm.append('metadata', new Blob([JSON.stringify({})], { type: 'application/json' }));
+        pfm.append('file', pdfBlob, draftPdfName);
+        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingSd.files[0].id}?uploadType=multipart`,
+          { method: 'PATCH', headers: { Authorization: `Bearer ${gdriveToken}` }, body: pfm });
+      } else {
+        pfm.append('metadata', new Blob([JSON.stringify({ name: draftPdfName, parents: [quotesFolderId] })], { type: 'application/json' }));
+        pfm.append('file', pdfBlob, draftPdfName);
+        await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+          { method: 'POST', headers: { Authorization: `Bearer ${gdriveToken}` }, body: pfm });
+      }
+    } catch(pdfErr) {
+      console.warn('Draft PDF save failed (non-fatal, JSON draft already saved):', pdfErr.message);
+    }
   } catch(e) { console.warn('saveDraft:', e); showToast('❌ Draft save failed: ' + e.message); }
 }
 
@@ -2522,11 +2587,24 @@ async function checkForExistingQuote(rootId, clientId) {
       { headers: { Authorization: `Bearer ${gdriveToken}` } });
     const sd = await sr.json();
     if (!sd.files?.length) return;
+    // Keep the file ID this lookup already resolved — correctly scoped to
+    // THIS client, since it came from getClientFolderFromRecord above.
+    // Reusing it directly means there's no separate global search that
+    // could ever point at a different client than the one loaded.
+    _existingSubmissionFileId = sd.files[0].id;
     const dateEl = document.querySelector('[data-existing-date]');
     if (dateEl) dateEl.textContent = new Date(sd.files[0].modifiedTime).toLocaleDateString('en-AU', { day:'2-digit', month:'short', year:'numeric' });
     const banner = document.getElementById('existingQuoteBanner');
     if (banner) banner.style.display = 'flex';
   } catch(e) { console.warn('checkForExistingQuote:', e); }
+}
+
+// Loads the already-resolved existing quote directly — reuses the file ID
+// checkForExistingQuote found during the correctly-scoped Load Client
+// lookup, rather than running a second, separate, unscoped search.
+function loadExistingSubmission() {
+  if (!_existingSubmissionFileId) { showToast('⚠️ No existing quote found to load'); return; }
+  selectQuoteFile(_existingSubmissionFileId);
 }
 
 async function loadDraft() {
@@ -2540,61 +2618,7 @@ async function loadDraft() {
   } catch(e) { showToast('⚠️ Could not restore: ' + e.message); }
 }
 
-async function recallPastQuote() {
-  showToast('🔍 Searching...');
-  try {
-    await getDriveToken();
-    const sr = await fetch(`https://www.googleapis.com/drive/v3/files?q=name contains '_quote_data.json' and trashed=false&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=50`,
-      { headers: { Authorization: `Bearer ${gdriveToken}` } });
-    const sd = await sr.json();
-    if (!sd.files?.length) { showToast('⚠️ No saved quotes found'); return; }
-    showQuotePicker(sd.files);
-  } catch(e) { showToast('❌ Could not search: ' + e.message); }
-}
-
-let _quotePickerFiles = [];
-function showQuotePicker(files) {
-  document.getElementById('quotePickerModal')?.remove();
-  _quotePickerFiles = files.map(f => ({ ...f, displayName: f.name.replace(/_quote_data\.json$/i,'').replace(/_/g,' ') }));
-  const modal = document.createElement('div');
-  modal.id = 'quotePickerModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px;';
-  const fmt = iso => iso ? new Date(iso).toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'})+' '+new Date(iso).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'}) : '';
-  const rows = list => list.map(f =>
-    `<div onclick="selectQuoteFile('${f.id}')" style="padding:12px 14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.08);" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='transparent'">
-      <div style="font-size:13px;font-weight:600;color:white;">${f.displayName}</div>
-      <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-top:2px;">${fmt(f.modifiedTime)}</div>
-    </div>`).join('') || '<div style="padding:20px;text-align:center;color:rgba(255,255,255,0.5);">No matches</div>';
-  modal.innerHTML = `<div style="background:#003466;border-radius:12px;width:100%;max-width:480px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.4);overflow:hidden;">
-    <div style="padding:16px 20px 0;display:flex;align-items:center;justify-content:space-between;">
-      <div><div style="font-size:15px;font-weight:700;color:white;">📂 Recall Past Quote</div>
-      <div style="font-size:11px;opacity:0.7;color:white;margin-top:2px;">${files.length} quote${files.length!==1?'s':''} found</div></div>
-      <button onclick="document.getElementById('quotePickerModal').remove()" style="background:rgba(255,255,255,0.15);border:none;color:white;border-radius:6px;padding:6px 10px;cursor:pointer;">✕</button>
-    </div>
-    <div style="padding:14px 20px;">
-      <input type="text" placeholder="Search..." autocomplete="off" oninput="filterQuotePicker(this.value)"
-        style="width:100%;padding:10px 12px;border-radius:10px;border:1.5px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.1);color:white;font-family:'DM Sans',sans-serif;font-size:13px;box-sizing:border-box;">
-    </div>
-    <div id="quotePickerResults" style="overflow-y:auto;flex:1;border-top:1px solid rgba(255,255,255,0.1);">${rows(_quotePickerFiles)}</div>
-  </div>`;
-  document.body.appendChild(modal);
-}
-
-function filterQuotePicker(q) {
-  const results = document.getElementById('quotePickerResults');
-  if (!results) return;
-  const qL = q.toLowerCase().trim();
-  const matches = qL ? _quotePickerFiles.filter(f => f.displayName.toLowerCase().includes(qL)) : _quotePickerFiles;
-  const fmt = iso => iso ? new Date(iso).toLocaleDateString('en-AU',{day:'2-digit',month:'short',year:'numeric'})+' '+new Date(iso).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'}) : '';
-  results.innerHTML = matches.map(f =>
-    `<div onclick="selectQuoteFile('${f.id}')" style="padding:12px 14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.08);" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='transparent'">
-      <div style="font-size:13px;font-weight:600;color:white;">${f.displayName}</div>
-      <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-top:2px;">${fmt(f.modifiedTime)}</div>
-    </div>`).join('') || '<div style="padding:20px;text-align:center;color:rgba(255,255,255,0.5);">No matches</div>';
-}
-
 async function selectQuoteFile(fileId) {
-  document.getElementById('quotePickerModal')?.remove();
   hideExistingBanner();
   showToast('⏳ Loading quote...');
   try {
@@ -2737,6 +2761,7 @@ async function emailPDFAndSaveToDrive() {
     if (!uploaded.id) throw new Error('PDF upload returned no file ID');
     const quoteFolderId = await getQuoteJsonFolder(clientFolderId);
     const jsonFileId = await saveQuoteJSON(quoteFolderId, baseName, d);
+    cleanupQuoteDraftPdf(clientFolderId, clientId).catch(()=>{});
     // TODO: email-to-BDM is parked for now per Michael's instruction — button
     // is relabeled "Save to Drive" to match. Re-enable this call once the
     // dedicated Quote EmailJS template + PDF attachment work (banked) is
