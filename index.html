@@ -119,11 +119,6 @@ input:checked + .slider:before{transform:translateX(16px);}
 /* QUOTE NUMBER */
 .quote-number-wrap{display:flex;gap:8px;align-items:center;}
 .quote-number-wrap input{font-family:'DM Mono',monospace;font-weight:600;color:var(--navy);}
-.regen-btn{background:var(--blue-pale);border:1.5px solid var(--blue-light);color:var(--blue);
-  border-radius:6px;padding:8px 10px;font-size:11px;font-weight:700;cursor:pointer;
-  white-space:nowrap;font-family:'DM Sans',sans-serif;flex-shrink:0;}
-.regen-btn:hover{background:var(--blue-light);}
-
 /* BANNERS */
 .client-banner{display:none;align-items:center;gap:12px;background:#e8f2fb;border:1.5px solid var(--blue);
   border-radius:10px;padding:12px 16px;margin-bottom:20px;flex-wrap:wrap;}
@@ -634,8 +629,6 @@ input:checked + .slider:before{transform:translateX(16px);}
 const GDRIVE_CLIENT_ID   = '49055725643-mlnqu8l92vmau83rnrk8imupiqvs03t1.apps.googleusercontent.com';
 const GDRIVE_FOLDER_NAME = 'BioBlue Audits';
 const CLIENT_RECORDS_NAME= 'BioBlue_Client_Records.xlsx';
-const COUNTER_FILENAME   = 'BB_Quote_Counter.json';
-const COUNTER_START      = 2399;
 const EMAILJS_PUBLIC_KEY = 'VOzIE82-mIbrEcuPK';
 const EMAILJS_SERVICE    = 'service_f0s6xv5';
 const EMAILJS_TEMPLATE   = 'template_9wr2vra'; // reuses audit notification template
@@ -701,7 +694,6 @@ document.addEventListener('DOMContentLoaded', () => {
   try { if(typeof emailjs!=='undefined') emailjs.init(EMAILJS_PUBLIC_KEY); } catch(e){}
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('quoteDate').value = today;
-  generateQuoteNumber();
   updateValidity();
   addBulkRow();
   autoFillBDM('Michael Hodnett');
@@ -712,18 +704,6 @@ document.addEventListener('DOMContentLoaded', () => {
   updateProgress();
 });
 
-// =====================================================================
-// QUOTE NUMBER
-// =====================================================================
-function generateQuoteNumber() {
-  const now = new Date();
-  const yy  = String(now.getFullYear()).slice(2);
-  const mm  = String(now.getMonth()+1).padStart(2,'0');
-  const dd  = String(now.getDate()).padStart(2,'0');
-  const rnd = String(Math.floor(Math.random()*900)+100);
-  document.getElementById('quoteNumber').value = `Q-${yy}${mm}${dd}-${rnd}`;
-  updateProgress();
-}
 
 // =====================================================================
 // VALIDITY
@@ -1760,122 +1740,50 @@ function loadManualClient() {
 }
 
 // =====================================================================
-// SEQUENTIAL QUOTE COUNTER (BB_Quote_Counter.json in ADMIN DATA - DO NOT REMOVE)
+// MANUAL QUOTE NUMBER — BDM types the official number from the shared
+// register (not all quotes are done in-app, so no in-app counter can be
+// authoritative). Format required: Q + 6 digits, e.g. Q002427, with an
+// optional free-text suffix for revisions/versions, e.g. "Q002427-V2" or
+// "Q002427 Revised".
 // =====================================================================
-async function getAdminFolderId(rootFolderId) {
-  const sr = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=name='ADMIN DATA - DO NOT REMOVE' and '${rootFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
-    { headers:{ Authorization:`Bearer ${gdriveToken}` } });
-  const sd = await sr.json();
-  if (sd.files && sd.files.length) return sd.files[0].id;
-  const cr = await fetch('https://www.googleapis.com/drive/v3/files',
-    { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}`,'Content-Type':'application/json' },
-      body: JSON.stringify({ name:'ADMIN DATA - DO NOT REMOVE', mimeType:'application/vnd.google-apps.folder', parents:[rootFolderId] }) });
-  return (await cr.json()).id;
-}
+const QUOTE_NUMBER_PATTERN = /^Q\d{6}/i;
 
-async function getNextQuoteCounter() {
-  try {
-    const rootFolderId  = await getFolderId();
-    const adminFolderId = await getAdminFolderId(rootFolderId);
-
-    const sr = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=name='${COUNTER_FILENAME}' and '${adminFolderId}' in parents and trashed=false&fields=files(id)`,
-      { headers:{ Authorization:`Bearer ${gdriveToken}` } });
-    const sd = await sr.json();
-
-    let counter = COUNTER_START + 1;
-    let fileId  = null;
-
-    if (sd.files && sd.files.length) {
-      fileId = sd.files[0].id;
-      const dl   = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-        { headers:{ Authorization:`Bearer ${gdriveToken}` } });
-      const data = await dl.json();
-      counter = (parseInt(data.counter)||COUNTER_START) + 1;
-    }
-
-    // Save incremented counter back
-    const blob = new Blob([JSON.stringify({ counter, updatedAt:new Date().toISOString() })],
-      { type:'application/json' });
-    const fm = new FormData();
-    if (fileId) {
-      fm.append('metadata', new Blob([JSON.stringify({})], { type:'application/json' }));
-      fm.append('file', blob, COUNTER_FILENAME);
-      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`,
-        { method:'PATCH', headers:{ Authorization:`Bearer ${gdriveToken}` }, body:fm });
-    } else {
-      fm.append('metadata', new Blob([JSON.stringify({ name:COUNTER_FILENAME, parents:[adminFolderId] })], { type:'application/json' }));
-      fm.append('file', blob, COUNTER_FILENAME);
-      await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
-        { method:'POST', headers:{ Authorization:`Bearer ${gdriveToken}` }, body:fm });
-    }
-    return counter;
-  } catch(e) {
-    console.warn('Counter error:', e.message);
-    return Math.floor(Math.random()*9000)+1000; // fallback random
+function validateQuoteNumber(d) {
+  const qn = (d.quoteNumber || '').trim();
+  if (!qn) return '⚠️ Please enter the Quote Number before continuing';
+  if (!QUOTE_NUMBER_PATTERN.test(qn)) {
+    return '⚠️ Quote Number must start with "Q" followed by 6 digits (e.g. Q002427) — a suffix like "-V2" is fine after that';
   }
+  return null;
 }
 
-function buildQuoteRef(counter, companyName, dateStr) {
-  const qNum = 'Q' + String(counter).padStart(6,'0');
-  // Slug from company name — clean, hyphenated, title-cased
-  const slug = (companyName||'Client')
-    .replace(/[^a-zA-Z0-9\s]/g,'').trim()
+// Shared filename builder — {QuoteNumber}-{CompanySlug}-{DDMMYYYY}, e.g.
+// "Q002427-Wickhams-Transport-28072026". Used everywhere a quote file
+// (PDF, Word, JSON) gets named, so all save paths stay consistent.
+function buildQuoteBaseName(d) {
+  const qNum = (d.quoteNumber || 'Q').trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '');
+  const slug = (d.companyName || 'Client')
+    .replace(/[^a-zA-Z0-9\s]/g, '').trim()
     .split(/\s+/).join('-');
-  // Date DDMMYYYY from YYYY-MM-DD
-  const parts = (dateStr||new Date().toISOString().split('T')[0]).split('-');
-  const ddmmyyyy = (parts[2]||'00')+(parts[1]||'00')+(parts[0]||'0000');
+  const parts = (d.quoteDate || new Date().toISOString().split('T')[0]).split('-');
+  const ddmmyyyy = (parts[2] || '00') + (parts[1] || '00') + (parts[0] || '0000');
   return `${qNum}-${slug}-${ddmmyyyy}`;
 }
 
-// Shared filename builder — matches Audit's {Name}.{FormType} dot convention,
-// with a date suffix (DDMMYYYY) as requested. Used everywhere a quote file
-// (PDF, Word, JSON) gets named, so all four save paths stay consistent.
-function buildQuoteBaseName(d) {
-  // d.quoteNumber (from buildQuoteRef) already contains the sequence number,
-  // company slug, and date in one string, e.g. "Q002403-AABC-Test-Company-05072026".
-  // Previously this wrapped that already-complete reference with the company
-  // name again as a prefix and appended another date suffix on top,
-  // duplicating both. The reference alone is shorter and fully unique.
-  const qNum = (d.quoteNumber || 'Q').replace(/[^a-zA-Z0-9-]/g, '');
-  return qNum || 'Quote';
-}
-
-// Shared gate for minting a real sequential quote number. Both saveToDrive()
-// and emailPDFAndSaveToDrive() call this first, so a number is only ever
-// minted once per quote per session, regardless of which save path (or both,
-// one after the other) is used:
-//   - Recalled a past quote and are now saving/sending it -> treat as a
-//     revision: mint a NEW number, report what it supersedes.
-//   - Brand new quote, first real save this session -> mint a number.
-//   - Already minted a number earlier this session -> reuse it, don't re-mint.
-// Returns { quoteNumber, supersedes } - supersedes is the old quote number
-// being revised, or null for an original quote.
-async function ensureQuoteNumber(d) {
+// Shared gate before saving/sending. No minting anymore — just reads
+// whatever the BDM typed into the Quote Number field, and tracks whether
+// this save is a revision of a recalled quote (for the Quotes Log
+// "Supersedes" column). Returns { quoteNumber, supersedes }.
+function ensureQuoteNumber(d) {
   const field = document.getElementById('quoteNumber');
+  d.quoteNumber = (field?.value || d.quoteNumber || '').trim();
+  const supersedes = _isRevision ? _recalledQuoteNumber : null;
   if (_isRevision) {
-    const counter  = await getNextQuoteCounter();
-    const quoteRef = buildQuoteRef(counter, d.companyName, d.quoteDate);
-    const supersedes = _recalledQuoteNumber;
-    d.quoteNumber = quoteRef;
-    if (field) field.value = quoteRef;
     _isRevision = false;
     _recalledQuoteNumber = null;
-    _realQuoteNumberMinted = true;
     _quoteJsonFileId = null; // this is a new quote, not an overwrite of the recalled one's JSON
-    return { quoteNumber: quoteRef, supersedes };
   }
-  if (!_realQuoteNumberMinted) {
-    const counter  = await getNextQuoteCounter();
-    const quoteRef = buildQuoteRef(counter, d.companyName, d.quoteDate);
-    d.quoteNumber = quoteRef;
-    if (field) field.value = quoteRef;
-    _realQuoteNumberMinted = true;
-    return { quoteNumber: quoteRef, supersedes: null };
-  }
-  d.quoteNumber = field?.value?.trim() || d.quoteNumber;
-  return { quoteNumber: d.quoteNumber, supersedes: null };
+  return { quoteNumber: d.quoteNumber, supersedes };
 }
 
 // =====================================================================
@@ -2085,6 +1993,8 @@ async function saveToDrive() {
   if (!_prospectVerified) { showProspectGate('This client has not completed a Prospect form yet. A Quote can only be created once the Prospect form is submitted for this client.', new URLSearchParams(window.location.search).get('client')); return; }
   const d = collectData();
   if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
+  const _qnErr = validateQuoteNumber(d);
+  if (_qnErr) { showToast(_qnErr); return; }
   const _pricingErr = validateHasPricing(d);
   if (_pricingErr) { showToast(_pricingErr); return; }
   const _bulkErr = validateBulkPricing(d);
@@ -2100,9 +2010,9 @@ async function saveToDrive() {
       ? await getClientFolderFromRecord(rootFolderId, clientId, clientFolderName)
       : await getOrCreateClientFolder(rootFolderId, clientFolderName);
 
-    // Get real sequential quote number (or reuse one already minted this session)
-    showToast('🔢 Generating quote number…');
-    const { quoteNumber: quoteRef, supersedes } = await ensureQuoteNumber(d);
+    // Quote Number is manually entered by the BDM — read it and check
+    // whether this save is a revision of a recalled quote
+    const { quoteNumber: quoteRef, supersedes } = ensureQuoteNumber(d);
     const baseName = buildQuoteBaseName(d);
     const quotesFolderId = await getQuotesOutputFolder(clientFolderId);
 
@@ -2421,10 +2331,9 @@ async function getQuotesOutputFolder(clientFolderId) {
 }
 
 // Revision tracking — set when a past quote is recalled, consumed the next
-// time a real quote number is minted (see ensureQuoteNumber below).
+// time it's saved/sent again (see ensureQuoteNumber below).
 let _recalledQuoteNumber   = null;
 let _isRevision            = false;
-let _realQuoteNumberMinted = false;
 
 async function _getOrCreateQFolder(parentId, name) {
   const key = parentId + '::' + name;
@@ -2626,7 +2535,6 @@ async function selectQuoteFile(fileId) {
     _quoteJsonFileId = fileId;
     _recalledQuoteNumber = data.quoteNumber || null;
     _isRevision = true;
-    _realQuoteNumberMinted = true; // recalled quote already has a real number
     restoreQuoteFields(data);
     showToast('✅ Quote loaded');
   } catch(e) { showToast('❌ Could not load: ' + e.message); }
@@ -2728,18 +2636,19 @@ async function emailPDFAndSaveToDrive() {
   try {
     let d = collectData();
     if (!d.companyName) { showToast('⚠️ Please enter a company name first'); return; }
+    const _qnErr = validateQuoteNumber(d);
+    if (_qnErr) { showToast(_qnErr); return; }
     const _pricingErr = validateHasPricing(d);
     if (_pricingErr) { showToast(_pricingErr); return; }
     const _bulkErr = validateBulkPricing(d);
     if (_bulkErr) { showToast(_bulkErr); return; }
-    // Mint/reuse the quote number BEFORE generating the PDF, so the PDF's
-    // own quote-number field and the filename are guaranteed to match —
-    // previously the PDF was generated before this ran, so it could carry
-    // a stale number if this was the first save action of the session.
-    const { quoteNumber: quoteRef, supersedes } = await ensureQuoteNumber(d);
+    // Quote Number is manually entered by the BDM — read it before
+    // generating the PDF, so the PDF's own quote-number field and the
+    // filename are guaranteed to match what's currently in the field.
+    const { quoteNumber: quoteRef, supersedes } = ensureQuoteNumber(d);
     const doc = await generatePDF(true);
     const pdfBlob = doc.output('blob');
-    d = collectData(); // re-read now the quoteNumber field reflects ensureQuoteNumber's result
+    d = collectData(); // re-read to pick up anything generatePDF may have touched
     await getDriveToken();
     const clientId = new URLSearchParams(window.location.search).get('client');
     const rootRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${GDRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
@@ -2792,10 +2701,8 @@ function clearAll() {
   _quoteJsonFileId = null;
   _recalledQuoteNumber = null;
   _isRevision = false;
-  _realQuoteNumberMinted = false;
   const sw = document.getElementById('contactSelectorWrap');
   if (sw) sw.style.display = 'none';
-  generateQuoteNumber();
   addBulkRow();
   autoFillBDM('Michael Hodnett');
   document.getElementById('bdmName').value='Michael Hodnett';
