@@ -633,6 +633,10 @@ const EMAILJS_PUBLIC_KEY = 'VOzIE82-mIbrEcuPK';
 const EMAILJS_SERVICE    = 'service_f0s6xv5';
 const EMAILJS_TEMPLATE   = 'template_9wr2vra'; // reuses audit notification template
 let gdriveToken = null;
+// Used by the quote greeting ("Hi {firstName},") — pulls just the first
+// word out of a full contact name, since the greeting shouldn't show the
+// surname.
+function firstNameOf(fullName) { return (fullName || '').trim().split(/\s+/)[0] || ''; }
 // Quote Builder is non-negotiably gated behind a completed Prospect record —
 // true only once that's confirmed for the loaded client. Checked defensively
 // in every save path too, not just the initial page block, in case this
@@ -1192,9 +1196,9 @@ async function generatePDF(returnDoc = false) {
     });
     y += tData.length*rh + 12;
 
-    // Greeting
+    // Greeting — first name only, not the full "First Last"
     doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...BLACK);
-    doc.text(`Hi ${d.contactName || 'there'},`, margin, y); y += 8;
+    doc.text(`Hi ${firstNameOf(d.contactName) || 'there'},`, margin, y); y += 8;
 
     paras.forEach(para => {
       chk(20);
@@ -1605,7 +1609,7 @@ async function buildQuoteDocxBlob(d) {
   })();
 
   const letterParas = [
-    bodyPara(`Hi ${d.contactName || 'there'},`),
+    bodyPara(`Hi ${firstNameOf(d.contactName) || 'there'},`),
     bodyPara(`Thank you for your interest in AdBlue\u00ae supply by BioBlue. Please see our formal quotation for VDA Certified AdBlue\u00ae supply below.`),
   ];
   if (d.clientType === 'existing') letterParas.push(bodyPara('Thank you for your ongoing support as one of our valued business partners.'));
