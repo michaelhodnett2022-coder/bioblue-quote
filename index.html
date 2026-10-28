@@ -1378,7 +1378,7 @@ async function generatePDF(returnDoc = false) {
     chk(25);
     secHdr('BIOBLUE ADBLUE® LOAN TANK');
     doc.setFont('Jost','normal'); doc.setFontSize(9); doc.setTextColor(...BLACK);
-    const introLines = doc.splitTextToSize('BioBlue manufactures custom AdBlue® tanks and equipment to suit our customers’ needs. Please see details of the proposed AdBlue® tank and equipment below.', cW);
+    const introLines = doc.splitTextToSize('BioBlue manufactures custom AdBlue® tanks and equipment to suit our customers\' needs. Please see details of the proposed AdBlue® tank and equipment below.', cW);
     introLines.forEach(line => { chk(6); doc.text(line, margin, y); y += 5; });
     y += 3;
 
@@ -1839,7 +1839,7 @@ async function buildQuoteDocxBlob(d) {
   if (d.includeTankLoan && d.tankOption && TANK_OPTIONS[d.tankOption]) {
     const tank = TANK_OPTIONS[d.tankOption];
     tankSection.push(sectionTitle('BioBlue AdBlue® Loan Tank'));
-    tankSection.push(new Paragraph({ spacing:{after:160}, children:[new TextRun({text:'BioBlue manufactures custom AdBlue® tanks and equipment to suit our customers’ needs. Please see details of the proposed AdBlue® tank and equipment below.', size:20, color:BLACK})] }));
+    tankSection.push(new Paragraph({ spacing:{after:160}, children:[new TextRun({text:'BioBlue manufactures custom AdBlue® tanks and equipment to suit our customers\' needs. Please see details of the proposed AdBlue® tank and equipment below.', size:20, color:BLACK})] }));
     const specRows = [
       ['Product', tank.name],
       ['Item Code', tank.itemCode],
