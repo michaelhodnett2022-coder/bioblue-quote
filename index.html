@@ -1555,6 +1555,9 @@ async function generatePDF(returnDoc = false) {
     doc.text(`Email: ${d.bdmSignEmail}`, margin, y);
   }
 
+  // Content on page two starts ~2 cm lower than the default top margin.
+  const PAGE2_OFFSET = 20;
+
   // --- Page composition decision ----------------------------------------
   const combinedAll = letterContentHeight + pricingTablesHeight + billingSectionHeight;
 
@@ -1571,11 +1574,11 @@ async function generatePDF(returnDoc = false) {
       y = margin + Math.min(30, Math.max(0, (availableHeight - letterContentHeight) / 2));
       drawLetterContent();
       doc.addPage();
-      y = margin + CONTENT_HEADER_HEIGHT;
+      y = margin + CONTENT_HEADER_HEIGHT + PAGE2_OFFSET;
       drawPricingTables();
     }
     doc.addPage();
-    y = margin + CONTENT_HEADER_HEIGHT;
+    y = margin + CONTENT_HEADER_HEIGHT + (letterContentHeight + pricingTablesHeight <= availableHeight ? PAGE2_OFFSET : 0);
     drawTankSpecSection();
     if (y + billingSectionHeight > 280) {
       doc.addPage();
@@ -1600,7 +1603,7 @@ async function generatePDF(returnDoc = false) {
     drawPricingTables();
 
     doc.addPage();
-    y = margin + CONTENT_HEADER_HEIGHT; // letter-style top alignment, plus room for the dialled-down header
+    y = margin + CONTENT_HEADER_HEIGHT + PAGE2_OFFSET; // letter-style top alignment, plus room for the dialled-down header
     drawBillingSection();
   } else {
     // Fallback layout: too many pricing rows to fit with the letter —
@@ -1609,7 +1612,7 @@ async function generatePDF(returnDoc = false) {
     drawLetterContent();
 
     doc.addPage();
-    y = margin + CONTENT_HEADER_HEIGHT; // letter-style top alignment, plus room for the dialled-down header
+    y = margin + CONTENT_HEADER_HEIGHT + PAGE2_OFFSET; // letter-style top alignment, plus room for the dialled-down header
     drawPricingTables();
     // Keep the whole billing/closing/signoff block together: if it won't
     // ALL fit in what's left on this page, push it onto a fresh page as one
@@ -1888,7 +1891,12 @@ async function buildQuoteDocxBlob(d) {
   if (d.includeTankLoan && d.tankOption && TANK_OPTIONS[d.tankOption]) {
     const tank = TANK_OPTIONS[d.tankOption];
     tankSection.push(new Paragraph({ children: [new PageBreak()] }));
-    tankSection.push(sectionTitle('BioBlue AdBlue\u00ae Loan Tank'));
+    // ~2 cm extra space at the top of page two, matching the PDF
+    tankSection.push(new Paragraph({
+      spacing: { before: 1134 + 300, after: 160 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: NAVY } },
+      children: [new TextRun({ text: 'BioBlue AdBlue\u00ae Loan Tank', bold: true, color: NAVY, size: 22 })],
+    }));
     tankSection.push(new Paragraph({ spacing:{after:160}, children:[new TextRun({text:'BioBlue manufactures custom AdBlue\u00ae tanks and equipment to suit our customers\' needs. Please see details of the proposed AdBlue\u00ae tank and equipment below.', size:20, color:BLACK})] }));
     const specParas = [
       ['Product', tank.name],
@@ -3065,7 +3073,13 @@ async function emailPDFAndSaveToDrive() {
     const { quoteNumber: quoteRef, supersedes } = ensureQuoteNumber(d);
     const doc = await generatePDF(true);
     const pdfBlob = doc.output('blob');
-    d = collectData(); // re-read to pick up anything generatePDF may have touched
+    // Re-read to pick up anything generatePDF may have touched. collectData()
+    // doesn't carry the revision number (it's set by ensureQuoteNumber, not a
+    // form field), so carry it across — otherwise the PDF filename and the
+    // Quotes Log lose the -V2/-V3 suffix.
+    const _rev = d.revisionNumber;
+    d = collectData();
+    d.revisionNumber = _rev;
     await getDriveToken();
     const clientId = new URLSearchParams(window.location.search).get('client');
     const rootRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${GDRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`,
