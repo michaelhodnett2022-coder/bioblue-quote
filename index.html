@@ -62,7 +62,7 @@ body{font-family:'DM Sans',sans-serif;background:#f0f4f8;color:var(--gray-dark);
 .field-row.three{grid-template-columns:1fr 1fr 1fr;}
 @media(max-width:520px){.field-row,.field-row.three{grid-template-columns:1fr;}}
 .field-group{display:flex;flex-direction:column;gap:5px;}
-.field-label{font-size:12px;font-weight:600;color:var(--gray-mid);text-transform:uppercase;letter-spacing:0.4px;}
+.field-label{font-size:14px;font-weight:700;color:var(--gray-dark);text-transform:uppercase;letter-spacing:0.4px;}
 .field-label.required::after{content:' *';color:var(--red);}
 input[type="text"],input[type="email"],input[type="tel"],input[type="date"],input[type="number"],textarea,select{
   width:100%;padding:10px 12px;border:1.5px solid var(--gray-light);border-radius:var(--radius-sm);
@@ -101,6 +101,8 @@ input:checked + .slider:before{transform:translateX(16px);}
 .pricing-table th{background:var(--blue);color:white;padding:9px 10px;font-size:11px;font-weight:700;text-align:left;white-space:nowrap;}
 .pricing-table td{padding:6px 8px;border-bottom:1px solid var(--gray-light);vertical-align:middle;}
 .pricing-table tr:hover td{background:var(--blue-pale);}
+.pricing-table.no-tank .tank-col{display:none;}
+.section-card.tank-card{border:2px solid var(--navy);}
 .pricing-table input[type="text"]{padding:7px 8px;font-size:13px;border-radius:6px;min-height:34px;}
 .pricing-table select{padding:7px 8px;font-size:13px;border-radius:6px;min-height:34px;}
 .remove-row-btn{background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:4px 6px;
@@ -325,14 +327,14 @@ input:checked + .slider:before{transform:translateX(16px);}
       <div class="field-group" style="margin-bottom:12px;">
         <label class="field-label required">Quote Number</label>
         <div class="quote-number-wrap">
-          <input type="text" id="quoteNumber" placeholder="Enter quote number, e.g. Q002415" oninput="updateProgress()">
+          <input type="text" id="quoteNumber" placeholder="" oninput="updateProgress()">
         </div>
       </div>
 
       <div class="field-group" style="margin-bottom:12px;">
-        <label class="field-label">Tagline (optional)</label>
+        <label class="field-label">Tagline</label>
         <div class="quote-number-wrap">
-          <input type="text" id="quoteTagline" placeholder="e.g. Corps Depot" oninput="updateProgress()">
+          <input type="text" id="quoteTagline" placeholder="" oninput="updateProgress()">
         </div>
       </div>
 
@@ -391,38 +393,81 @@ input:checked + .slider:before{transform:translateX(16px);}
       <div class="field-row">
         <div class="field-group">
           <label class="field-label required">Company / Billing Entity</label>
-          <input type="text" id="companyName" placeholder="e.g. Wickhams Transport" oninput="updateProgress()">
+          <input type="text" id="companyName" placeholder="" oninput="updateProgress()">
         </div>
         <div class="field-group">
           <label class="field-label required">Attention (Contact Name)</label>
-          <input type="text" id="contactName" placeholder="e.g. John Smith" oninput="updateProgress()">
+          <input type="text" id="contactName" placeholder="" oninput="updateProgress()">
         </div>
       </div>
       <div class="field-row">
         <div class="field-group">
           <label class="field-label">Email</label>
-          <input type="email" id="contactEmail" placeholder="contact@company.com.au">
+          <input type="email" id="contactEmail" placeholder="">
         </div>
         <div class="field-group">
           <label class="field-label">Phone</label>
-          <input type="tel" id="contactPhone" placeholder="+61 4XX XXX XXX">
+          <input type="tel" id="contactPhone" placeholder="">
         </div>
       </div>
       <div class="field-row full">
         <div class="field-group">
           <label class="field-label">Site / Delivery Address</label>
-          <input type="text" id="siteAddress" placeholder="Street address, Suburb, State">
+          <input type="text" id="siteAddress" placeholder="">
         </div>
       </div>
     </div>
   </div>
 
-  <!-- SECTION 3: BULK PRICING -->
+  <!-- SECTION 3: BIOBLUE LOAN TANK (sits before pricing: the toggle drives the Loan Tank column in Bulk Pricing) -->
+  <div class="section-card tank-card">
+    <div class="section-header" style="background:var(--navy);" onclick="toggleSection('s3t')">
+      <div class="section-header-icon">🛢️</div>
+      <div class="section-header-text">
+        <h2>3. BioBlue Tank</h2>
+        <p>Optional — loan or hire tank: adds a price column and the tank specs page</p>
+      </div>
+      <div class="section-toggle" id="toggle-s3t">▼</div>
+    </div>
+    <div class="section-body" id="s3t">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <label style="font-size:14px;font-weight:700;color:var(--gray-dark);text-transform:uppercase;letter-spacing:0.4px;">
+          Include a BioBlue Tank?
+        </label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="includeTankLoan" onchange="toggleTankLoanSection()">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div id="tankLoanArea" style="display:none;margin-top:12px;">
+        <div class="field-group" style="margin-bottom:12px;">
+          <label class="field-label">Loan or Hire?</label>
+          <select id="tankOfferType" onchange="applyTankLoanUI();updateProgress()">
+            <option value="">— Select —</option>
+            <option value="Loan">Loan</option>
+            <option value="Hire">Hire</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Tank Option</label>
+          <select id="tankOption" onchange="updateProgress()">
+            <option value="">— Select a tank —</option>
+            <option value="BFRT5000">BLUEFLOW AdBlue® 5,000L Round</option>
+            <option value="BFRT10000">BLUEFLOW AdBlue® 10,000L Round</option>
+            <option value="BFST5000">BLUEFLOW AdBlue® 5,000L Slimline</option>
+          </select>
+        </div>
+        <div style="font-size:11px;color:var(--gray-mid);margin-top:6px;">Enter the tank cpl in the pricing table below. Switching this off clears those figures.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 4: BULK PRICING -->
   <div class="section-card">
     <div class="section-header" onclick="toggleSection('s3')">
       <div class="section-header-icon">🚛</div>
       <div class="section-header-text">
-        <h2>3. Bulk AdBlue® Pricing</h2>
+        <h2>4. Bulk AdBlue® Pricing</h2>
         <p>AUS32 bulk delivered — add one row per depot/site</p>
       </div>
       <div class="section-toggle" id="toggle-s3">▼</div>
@@ -430,7 +475,7 @@ input:checked + .slider:before{transform:translateX(16px);}
     <div class="section-body" id="s3">
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-        <label style="font-size:12px;font-weight:600;color:var(--gray-mid);text-transform:uppercase;letter-spacing:0.4px;">
+        <label style="font-size:14px;font-weight:700;color:var(--gray-dark);text-transform:uppercase;letter-spacing:0.4px;">
           Include bulk pricing in quote?
         </label>
         <label class="toggle-switch">
@@ -440,7 +485,7 @@ input:checked + .slider:before{transform:translateX(16px);}
       </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding:10px 12px;background:#f8fafc;border-radius:8px;border:1px solid var(--gray-light);">
-        <label style="font-size:12px;font-weight:600;color:var(--gray-mid);text-transform:uppercase;letter-spacing:0.4px;">
+        <label style="font-size:14px;font-weight:700;color:var(--gray-dark);text-transform:uppercase;letter-spacing:0.4px;">
           Price display on PDF / Word doc
         </label>
         <div style="display:flex;align-items:center;gap:8px;">
@@ -455,13 +500,13 @@ input:checked + .slider:before{transform:translateX(16px);}
 
       <div id="bulkPricingArea">
         <div class="pricing-table-wrap">
-          <table class="pricing-table">
+          <table class="pricing-table no-tank" id="bulkTable">
             <thead>
               <tr>
                 <th style="width:22%;">Depot / Site</th>
-                <th style="width:17%;">Bulk cpl</th>
-                <th style="width:17%;">Tank Hire cpl</th>
-                <th style="width:17%;">Freight cpl</th>
+                <th style="width:17%;">AdBlue cpl</th>
+                <th class="tank-col" id="tankColHeader" style="width:17%;">Tank cpl</th>
+                <th style="width:17%;">Delivery cpl</th>
                 <th style="width:19%;">Total cpl</th>
                 <th style="width:8%;text-align:center;">✕</th>
               </tr>
@@ -472,26 +517,6 @@ input:checked + .slider:before{transform:translateX(16px);}
         <button class="add-row-btn" onclick="addBulkRow()">+ Add Site / Depot</button>
       </div>
 
-      <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 0;padding:10px 12px;background:#f8fafc;border-radius:8px;border:1px solid var(--gray-light);">
-        <label style="font-size:12px;font-weight:600;color:var(--gray-mid);text-transform:uppercase;letter-spacing:0.4px;">
-          Include a BioBlue Loan Tank?
-        </label>
-        <label class="toggle-switch">
-          <input type="checkbox" id="includeTankLoan" onchange="toggleTankLoanSection()">
-          <span class="slider"></span>
-        </label>
-      </div>
-      <div id="tankLoanArea" style="display:none;margin-top:10px;">
-        <div class="field-group">
-          <label class="field-label">Tank Option</label>
-          <select id="tankOption" onchange="updateProgress()">
-            <option value="">— Select a tank —</option>
-            <option value="BFRT5000">BLUEFLOW AdBlue® 5,000L Round</option>
-            <option value="BFRT10000">BLUEFLOW AdBlue® 10,000L Round</option>
-            <option value="BFST5000">BLUEFLOW AdBlue® 5,000L Slimline</option>
-          </select>
-        </div>
-      </div>
 
     </div>
   </div>
@@ -501,7 +526,7 @@ input:checked + .slider:before{transform:translateX(16px);}
     <div class="section-header" onclick="toggleSection('s4')">
       <div class="section-header-icon">📦</div>
       <div class="section-header-text">
-        <h2>4. Packaged AdBlue® Pricing</h2>
+        <h2>5. Packaged AdBlue® Pricing</h2>
         <p>IBC, drum, container and bottle pricing</p>
       </div>
       <div class="section-toggle" id="toggle-s4">▼</div>
@@ -509,7 +534,7 @@ input:checked + .slider:before{transform:translateX(16px);}
     <div class="section-body" id="s4">
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-        <label style="font-size:12px;font-weight:600;color:var(--gray-mid);text-transform:uppercase;letter-spacing:0.4px;">
+        <label style="font-size:14px;font-weight:700;color:var(--gray-dark);text-transform:uppercase;letter-spacing:0.4px;">
           Include packaged pricing in quote?
         </label>
         <label class="toggle-switch">
@@ -544,7 +569,7 @@ input:checked + .slider:before{transform:translateX(16px);}
     <div class="section-header" onclick="toggleSection('s5')">
       <div class="section-header-icon">📝</div>
       <div class="section-header-text">
-        <h2>5. Terms & Closing</h2>
+        <h2>6. Terms & Closing</h2>
         <p>Payment terms, closing comments and sign-off</p>
       </div>
       <div class="section-toggle" id="toggle-s5">▼</div>
@@ -557,7 +582,7 @@ input:checked + .slider:before{transform:translateX(16px);}
           <input class="terms-editable" id="term1" value="Standard payment terms are 21 days from Invoice.">
           <input class="terms-editable" id="term2" value="Prices above are not inclusive of GST.">
           <input class="terms-editable" id="term3" value="Prices above include delivery to the listed sites/depots.">
-          <input class="terms-editable" id="term4" placeholder="Add additional term (optional)">
+          <input class="terms-editable" id="term4" placeholder="">
         </div>
       </div>
 
@@ -573,7 +598,7 @@ input:checked + .slider:before{transform:translateX(16px);}
         <div class="field-row">
           <div class="field-group">
             <label class="field-label">Name</label>
-            <input type="text" id="bdmSignName" placeholder="Michael Hodnett" oninput="updateProgress()">
+            <input type="text" id="bdmSignName" placeholder="" oninput="updateProgress()">
           </div>
           <div class="field-group">
             <label class="field-label">Title</label>
@@ -583,11 +608,11 @@ input:checked + .slider:before{transform:translateX(16px);}
         <div class="field-row">
           <div class="field-group">
             <label class="field-label">Mobile</label>
-            <input type="tel" id="bdmSignMobile" placeholder="0427 670 726">
+            <input type="tel" id="bdmSignMobile" placeholder="">
           </div>
           <div class="field-group">
             <label class="field-label">Email</label>
-            <input type="email" id="bdmSignEmail" placeholder="michael.hodnett@bioblue.com.au">
+            <input type="email" id="bdmSignEmail" placeholder="">
           </div>
         </div>
       </div>
@@ -829,31 +854,31 @@ function addBulkRow(depot='', bulkCpl='', tankHireCpl='', freightCpl='') {
   const tr = document.createElement('tr');
   tr.id = id;
   tr.innerHTML = `
-    <td><input type="text" placeholder="e.g. Hazelmere Depot" value="${depot}" oninput="updateProgress()"></td>
+    <td><input type="text" placeholder="" value="${depot}" oninput="updateProgress()"></td>
     <td>
       <div style="position:relative;">
-        <input type="text" id="${id}_bulk" placeholder="e.g. 65" value="${bulkCpl}"
+        <input type="text" id="${id}_bulk" placeholder="" value="${bulkCpl}"
+          oninput="calcBulkDelivered('${id}');updateProgress()" style="padding-right:30px;text-align:right;">
+        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">cpl</span>
+      </div>
+    </td>
+    <td class="tank-col">
+      <div style="position:relative;">
+        <input type="text" id="${id}_tankhire" placeholder="" value="${tankHireCpl}"
           oninput="calcBulkDelivered('${id}');updateProgress()" style="padding-right:30px;text-align:right;">
         <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">cpl</span>
       </div>
     </td>
     <td>
       <div style="position:relative;">
-        <input type="text" id="${id}_tankhire" placeholder="e.g. 5" value="${tankHireCpl}"
+        <input type="text" id="${id}_freight" placeholder="" value="${freightCpl}"
           oninput="calcBulkDelivered('${id}');updateProgress()" style="padding-right:30px;text-align:right;">
         <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">cpl</span>
       </div>
     </td>
     <td>
       <div style="position:relative;">
-        <input type="text" id="${id}_freight" placeholder="e.g. 8" value="${freightCpl}"
-          oninput="calcBulkDelivered('${id}');updateProgress()" style="padding-right:30px;text-align:right;">
-        <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">cpl</span>
-      </div>
-    </td>
-    <td>
-      <div style="position:relative;">
-        <input type="text" id="${id}_delivered" placeholder="—" readonly
+        <input type="text" id="${id}_delivered" placeholder="" readonly
           style="padding-right:30px;text-align:right;background:#f0f4f8;color:var(--navy);font-weight:700;cursor:default;">
         <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">cpl</span>
       </div>
@@ -868,7 +893,8 @@ function addBulkRow(depot='', bulkCpl='', tankHireCpl='', freightCpl='') {
 
 function calcBulkDelivered(id) {
   const bulk     = parseFloat(document.getElementById(id+'_bulk')?.value) || 0;
-  const tankHire = parseFloat(document.getElementById(id+'_tankhire')?.value) || 0;
+  const tankOn   = document.getElementById('includeTankLoan')?.checked;
+  const tankHire = tankOn ? (parseFloat(document.getElementById(id+'_tankhire')?.value) || 0) : 0;
   const freight  = parseFloat(document.getElementById(id+'_freight')?.value) || 0;
   const dlvEl    = document.getElementById(id+'_delivered');
   const total = bulk + tankHire + freight;
@@ -888,7 +914,7 @@ function addPackagedRow(depot='', code='', unitPrice='', freightPrice='') {
   const tr = document.createElement('tr');
   tr.id = id;
   tr.innerHTML = `
-    <td><input type="text" placeholder="e.g. Hazelmere Site" value="${depot}"></td>
+    <td><input type="text" placeholder="" value="${depot}"></td>
     <td>
       <select id="${id}_code" onchange="updateProgress()" style="font-size:12px;">
         <option value="">— Select product —</option>
@@ -897,14 +923,14 @@ function addPackagedRow(depot='', code='', unitPrice='', freightPrice='') {
     </td>
     <td>
       <div style="position:relative;">
-        <input type="text" id="${id}_unit" placeholder="e.g. 45.00" value="${unitPrice}"
+        <input type="text" id="${id}_unit" placeholder="" value="${unitPrice}"
           style="padding-left:18px;text-align:right;" oninput="updateProgress()">
         <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">$</span>
       </div>
     </td>
     <td>
       <div style="position:relative;">
-        <input type="text" id="${id}_freight" placeholder="e.g. 35.00" value="${freightPrice}"
+        <input type="text" id="${id}_freight" placeholder="" value="${freightPrice}"
           style="padding-left:18px;text-align:right;">
         <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--gray-mid);font-weight:700;pointer-events:none;">$</span>
       </div>
@@ -928,10 +954,27 @@ function toggleBulkSection() {
   const show = document.getElementById('includeBulk').checked;
   document.getElementById('bulkPricingArea').style.display = show ? 'block' : 'none';
 }
-function toggleTankLoanSection() {
+// Shows/hides the tank picker and the Loan Tank price column, and recomputes
+// every row's total. Does NOT clear anything (used when restoring a quote).
+function applyTankLoanUI() {
   const show = document.getElementById('includeTankLoan').checked;
   document.getElementById('tankLoanArea').style.display = show ? 'block' : 'none';
-  if (!show) document.getElementById('tankOption').value = '';
+  document.getElementById('bulkTable')?.classList.toggle('no-tank', !show);
+  const _ty = document.getElementById('tankOfferType')?.value;
+  const _th = document.getElementById('tankColHeader');
+  if (_th) _th.textContent = (_ty ? _ty + ' ' : '') + 'Tank cpl';
+  document.querySelectorAll('#bulkRows tr').forEach(tr => calcBulkDelivered(tr.id));
+}
+// User-driven toggle: switching OFF clears the tank choice and every Loan
+// Tank price, so nothing hidden is ever kept or counted.
+function toggleTankLoanSection() {
+  const show = document.getElementById('includeTankLoan').checked;
+  if (!show) {
+    document.getElementById('tankOption').value = '';
+    document.getElementById('tankOfferType').value = '';
+    document.querySelectorAll('#bulkRows [id$="_tankhire"]').forEach(el => { el.value = ''; });
+  }
+  applyTankLoanUI();
   updateProgress();
 }
 function updatePriceDisplayLabels() {
@@ -964,7 +1007,7 @@ function collectData() {
   document.querySelectorAll('#bulkRows tr').forEach(tr => {
     const depot     = tr.querySelector('input[type="text"]')?.value?.trim() || '';
     const bulkCpl   = document.getElementById(tr.id+'_bulk')?.value?.trim() || '';
-    const tankHireCpl = document.getElementById(tr.id+'_tankhire')?.value?.trim() || '';
+    const tankHireCpl = document.getElementById('includeTankLoan')?.checked ? (document.getElementById(tr.id+'_tankhire')?.value?.trim() || '') : '';
     const freightCpl= document.getElementById(tr.id+'_freight')?.value?.trim() || '';
     const delivered = document.getElementById(tr.id+'_delivered')?.value?.trim() || '';
     if (depot || bulkCpl) bulkRows.push({ depot, bulkCpl, tankHireCpl, freightCpl, delivered });
@@ -999,6 +1042,7 @@ function collectData() {
     includePackaged: document.getElementById('includePackaged').checked,
     includeTankLoan: document.getElementById('includeTankLoan')?.checked || false,
     tankOption:      g('tankOption'),
+    tankOfferType:   document.getElementById('includeTankLoan')?.checked ? g('tankOfferType') : '',
     priceDisplayMode: document.getElementById('priceDisplayCombined')?.checked ? 'combined' : 'itemised',
     bulkRows,
     pkgRows,
@@ -1380,7 +1424,7 @@ async function generatePDF(returnDoc = false) {
   // already used above, just enough to keep the single-vs-two-page
   // centering decision below from being thrown off.
   const hasTank = !!(d.includeTankLoan && d.tankOption && TANK_OPTIONS[d.tankOption]);
-  if (hasTank) pricingTablesHeight += 7; // the tank line in the pricing table; spec section is on its own page
+  // (the tank is a price column now, not an extra row; its spec section is on its own page)
 
   // Tank spec section: intro across the top, then the spec list on the left
   // with the tank photo alongside on the right (compact, rather than the
@@ -1388,7 +1432,7 @@ async function generatePDF(returnDoc = false) {
   const TANK_PHOTO_W = 46;
   function drawTankSpecSection() {
     const tank = TANK_OPTIONS[d.tankOption];
-    secHdr('BIOBLUE ADBLUE\u00ae LOAN TANK');
+    secHdr('BIOBLUE ADBLUE\u00ae ' + (d.tankOfferType||'Loan').toUpperCase() + ' TANK');
     doc.setFont('Jost','normal'); doc.setFontSize(9); doc.setTextColor(...BLACK);
     const introLines = doc.splitTextToSize('BioBlue manufactures custom AdBlue\u00ae tanks and equipment to suit our customers\' needs. Please see details of the proposed AdBlue\u00ae tank and equipment below.', cW);
     introLines.forEach(line => { doc.text(line, margin, y); y += 5; });
@@ -1450,31 +1494,35 @@ async function generatePDF(returnDoc = false) {
         d.bulkRows.forEach((row, i) => {
           tableRow(bCols, [row.depot, BULK_PRODUCT.desc, row.delivered ? row.delivered+'¢/L' : '—'], i%2===1);
         });
-        if (d.includeTankLoan && d.tankOption && TANK_OPTIONS[d.tankOption]) {
-          tableRow(bCols, [d.bulkRows[0]?.depot || '', 'BioBlue AdBlue® Tank', 'Supplied By BioBlue'], d.bulkRows.length%2===1);
-        }
       } else {
-        const bCols = [
-          {label:'Depot / Site',            w:36},
-          {label:'Product',                 w:42},
-          {label:['Bulk','cpl'],            w:24},
-          {label:['Tank Hire','cpl'],       w:26},
-          {label:['Freight','cpl'],         w:24},
+        // Loan Tank column only appears when the Loan Tank toggle is on —
+        // mirrors the form: AdBlue / Delivery / Total, plus Loan Tank when on.
+        const showTank = !!d.includeTankLoan;
+        const bCols = showTank ? [
+          {label:'Depot / Site',            w:32},
+          {label:'Product',                 w:54},
+          {label:['AdBlue','cpl'],          w:21},
+          {label:[(d.tankOfferType||'Loan')+' Tank','cpl'], w:24},
+          {label:['Delivery','cpl'],        w:21},
           {label:['Total cpl','(ex GST)'],  w:cW-152},
+        ] : [
+          {label:'Depot / Site',            w:40},
+          {label:'Product',                 w:52},
+          {label:['AdBlue','cpl'],          w:28},
+          {label:['Delivery','cpl'],        w:28},
+          {label:['Total cpl','(ex GST)'],  w:cW-148},
         ];
         tableHdr(bCols);
         d.bulkRows.forEach((row, i) => {
-          tableRow(bCols, [
+          const cells = [
             row.depot, BULK_PRODUCT.desc,
             row.bulkCpl     ? row.bulkCpl+'¢'     : '—',
-            row.tankHireCpl ? row.tankHireCpl+'¢' : '—',
-            row.freightCpl  ? row.freightCpl+'¢'  : '—',
-            row.delivered   ? row.delivered+'¢'   : '—',
-          ], i%2===1);
+          ];
+          if (showTank) cells.push(row.tankHireCpl ? row.tankHireCpl+'¢' : '—');
+          cells.push(row.freightCpl ? row.freightCpl+'¢' : '—');
+          cells.push(row.delivered  ? row.delivered+'¢'  : '—');
+          tableRow(bCols, cells, i%2===1);
         });
-        if (d.includeTankLoan && d.tankOption && TANK_OPTIONS[d.tankOption]) {
-          tableRow(bCols, [d.bulkRows[0]?.depot || '', 'BioBlue AdBlue® Tank', '—', '—', '—', 'Supplied'], d.bulkRows.length%2===1);
-        }
       }
       chk(5);
       doc.setFont('Jost','italic'); doc.setFontSize(7); doc.setTextColor(...GRAY);
@@ -1854,33 +1902,29 @@ async function buildQuoteDocxBlob(d) {
   if (d.includeBulk && d.bulkRows.length > 0) {
     bulkSection.push(sectionTitle('BioBlue Bulk AdBlue\u00ae Supply Proposal'));
     const isCombined = d.priceDisplayMode === 'combined';
+    const showTank = !!d.includeTankLoan;
+    const itemisedWidths = showTank ? [2138,2500,1250,1250,1250,1250] : [2400,3038,1400,1400,1400];
     const headerRow = isCombined
       ? new TableRow({ children: [headerCell('Depot / Site', 2500), headerCell('Product', 4138), headerCell(['Delivered Price','(ex GST)'], 3000)] })
-      : new TableRow({ children: [headerCell('Depot / Site', 2138), headerCell('Product', 2500), headerCell('Bulk cpl', 1250), headerCell('Tank Hire cpl', 1250), headerCell('Freight cpl', 1250), headerCell(['Total cpl','(ex GST)'], 1250)] });
+      : new TableRow({ children: showTank
+          ? [headerCell('Depot / Site', 2138), headerCell('Product', 2500), headerCell('AdBlue cpl', 1250), headerCell((d.tankOfferType||'Loan')+' Tank cpl', 1250), headerCell('Delivery cpl', 1250), headerCell(['Total cpl','(ex GST)'], 1250)]
+          : [headerCell('Depot / Site', 2400), headerCell('Product', 3038), headerCell('AdBlue cpl', 1400), headerCell('Delivery cpl', 1400), headerCell(['Total cpl','(ex GST)'], 1400)] });
     const dataRows = d.bulkRows.map((r,i) => isCombined
       ? new TableRow({ children: [dataCell(r.depot,2500,{shade:i%2===1}), dataCell(BULK_PRODUCT.desc,4138,{shade:i%2===1}), dataCell(r.delivered?r.delivered+'\u00a2/L':'\u2014',3000,{right:true,bold:true,shade:i%2===1})] })
-      : new TableRow({ children: [
+      : new TableRow({ children: showTank ? [
           dataCell(r.depot,2138,{shade:i%2===1}), dataCell(BULK_PRODUCT.desc,2500,{shade:i%2===1}),
           dataCell(r.bulkCpl?r.bulkCpl+'\u00a2':'\u2014',1250,{right:true,shade:i%2===1}),
           dataCell(r.tankHireCpl?r.tankHireCpl+'\u00a2':'\u2014',1250,{right:true,shade:i%2===1}),
           dataCell(r.freightCpl?r.freightCpl+'\u00a2':'\u2014',1250,{right:true,shade:i%2===1}),
           dataCell(r.delivered?r.delivered+'\u00a2':'\u2014',1250,{right:true,bold:true,shade:i%2===1}),
+        ] : [
+          dataCell(r.depot,2400,{shade:i%2===1}), dataCell(BULK_PRODUCT.desc,3038,{shade:i%2===1}),
+          dataCell(r.bulkCpl?r.bulkCpl+'\u00a2':'\u2014',1400,{right:true,shade:i%2===1}),
+          dataCell(r.freightCpl?r.freightCpl+'\u00a2':'\u2014',1400,{right:true,shade:i%2===1}),
+          dataCell(r.delivered?r.delivered+'\u00a2':'\u2014',1400,{right:true,bold:true,shade:i%2===1}),
         ]})
     );
-    if (d.includeTankLoan && d.tankOption && TANK_OPTIONS[d.tankOption]) {
-      const tankShade = d.bulkRows.length%2===1;
-      dataRows.push(isCombined
-        ? new TableRow({ children: [dataCell(d.bulkRows[0]?.depot||'',2500,{shade:tankShade}), dataCell('BioBlue AdBlue\u00ae Tank',4138,{shade:tankShade}), dataCell('Supplied By BioBlue',3000,{right:true,bold:true,shade:tankShade})] })
-        : new TableRow({ children: [
-            dataCell(d.bulkRows[0]?.depot||'',2138,{shade:tankShade}), dataCell('BioBlue AdBlue\u00ae Tank',2500,{shade:tankShade}),
-            dataCell('\u2014',1250,{right:true,shade:tankShade}),
-            dataCell('\u2014',1250,{right:true,shade:tankShade}),
-            dataCell('\u2014',1250,{right:true,shade:tankShade}),
-            dataCell('Supplied',1250,{right:true,bold:true,shade:tankShade}),
-          ]})
-      );
-    }
-    bulkSection.push(new Table({ width:{size:CONTENT_WIDTH,type:WidthType.DXA}, columnWidths: isCombined?[2500,4138,3000]:[2138,2500,1250,1250,1250,1250], rows:[headerRow,...dataRows] }));
+    bulkSection.push(new Table({ width:{size:CONTENT_WIDTH,type:WidthType.DXA}, columnWidths: isCombined?[2500,4138,3000]:itemisedWidths, rows:[headerRow,...dataRows] }));
     bulkSection.push(new Paragraph({ spacing:{before:60}, children:[new TextRun({text:'All bulk pricing above is quoted ex GST.', italics:true, size:14, color:GRAY})] }));
   }
 
@@ -1895,7 +1939,7 @@ async function buildQuoteDocxBlob(d) {
     tankSection.push(new Paragraph({
       spacing: { before: 1134 + 300, after: 160 },
       border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: NAVY } },
-      children: [new TextRun({ text: 'BioBlue AdBlue\u00ae Loan Tank', bold: true, color: NAVY, size: 22 })],
+      children: [new TextRun({ text: 'BioBlue AdBlue\u00ae ' + (d.tankOfferType||'Loan') + ' Tank', bold: true, color: NAVY, size: 22 })],
     }));
     tankSection.push(new Paragraph({ spacing:{after:160}, children:[new TextRun({text:'BioBlue manufactures custom AdBlue\u00ae tanks and equipment to suit our customers\' needs. Please see details of the proposed AdBlue\u00ae tank and equipment below.', size:20, color:BLACK})] }));
     const specParas = [
@@ -2254,7 +2298,7 @@ async function sendQuoteEmail(d, pdfLink, wordLink, pdfBlob) {
   const bulkSummary = d.priceDisplayMode === 'combined'
     ? d.bulkRows.map(r => `  ${r.depot||'—'}: Delivered ${r.delivered||'—'}¢/L`).join('\n')
     : d.bulkRows.map(r =>
-        `  ${r.depot||'—'}: Bulk ${r.bulkCpl||'—'}¢ + Tank Hire ${r.tankHireCpl||'—'}¢ + Freight ${r.freightCpl||'—'}¢ = ${r.delivered||'—'}¢/L`
+        `  ${r.depot||'—'}: AdBlue ${r.bulkCpl||'—'}¢${d.includeTankLoan ? ' + '+(d.tankOfferType||'Loan')+' Tank '+(r.tankHireCpl||'—')+'¢' : ''} + Delivery ${r.freightCpl||'—'}¢ = ${r.delivered||'—'}¢/L`
       ).join('\n');
   const pkgSummary = d.pkgRows.map(r =>
     `  ${r.depot||'—'}: ${r.code||'—'} — $${r.unitPrice||'—'}/unit, freight $${r.freightPrice||'—'}/pallet`
@@ -2316,11 +2360,17 @@ async function uploadWordToDrive(clientFolderId, baseName, d) {
 // without the other produces an incomplete/incorrect delivered price.
 // Shared by both save paths so the rule can't drift between them.
 function validateBulkPricing(d) {
+  if (d.includeTankLoan && !d.tankOfferType) {
+    return '⚠️ Tank is switched on — choose Loan or Hire';
+  }
+  if (d.includeTankLoan && !d.tankOption) {
+    return '⚠️ Tank is switched on — select a tank option (or switch it off)';
+  }
   for (let i = 0; i < d.bulkRows.length; i++) {
     const row = d.bulkRows[i];
     if ((row.bulkCpl && !row.freightCpl) || (!row.bulkCpl && row.freightCpl)) {
       const label = row.depot || `Row ${i+1}`;
-      return `⚠️ ${label}: Bulk CPL and Freight CPL must both be filled in, or both left blank`;
+      return `⚠️ ${label}: AdBlue CPL and Delivery CPL must both be filled in, or both left blank`;
     }
   }
   return null;
@@ -2979,14 +3029,26 @@ function restoreQuoteFields(data) {
   if (data.quoteStatus) setQuoteStatus(data.quoteStatus);
   if (data.clientType)  setClientType(data.clientType);
   if (data._contacts?.length) { _loadedContacts = data._contacts; buildContactSelector(_loadedContacts); }
+  // Set the Loan Tank state BEFORE the rows are built, so each row's total
+  // is computed with the right columns. Older quotes that carried a Tank Hire
+  // price with the toggle off switch it on, so no saved price silently drops.
+  {
+    const legacyTank = (data.bulkRows||[]).some(r => r.tankHireCpl);
+    const tankOn = !!data.includeTankLoan || legacyTank;
+    document.getElementById('includeTankLoan').checked = tankOn;
+    if (!tankOn) document.getElementById('tankOption').value = '';
+    // Older quotes: a saved loan tank was a "Loan"; a bare Tank Hire price was a "Hire".
+    document.getElementById('tankOfferType').value = tankOn ? (data.tankOfferType || (data.includeTankLoan ? 'Loan' : 'Hire')) : '';
+    applyTankLoanUI();
+  }
   const bulkBody = document.getElementById('bulkRows');
   if (bulkBody && data.bulkRows?.length) { bulkBody.innerHTML=''; data.bulkRows.forEach(r=>addBulkRow(r.depot,r.bulkCpl,r.tankHireCpl,r.freightCpl)); }
   const pkgBody = document.getElementById('packagedRows');
   if (pkgBody && data.pkgRows?.length) { pkgBody.innerHTML=''; data.pkgRows.forEach(r=>addPackagedRow(r.depot,r.code,r.unitPrice,r.freightPrice)); }
   if (data.includeBulk!==undefined) { document.getElementById('includeBulk').checked=data.includeBulk; toggleBulkSection(); }
   if (data.includePackaged!==undefined) { document.getElementById('includePackaged').checked=data.includePackaged; togglePackagedSection(); }
-  if (data.includeTankLoan!==undefined) { document.getElementById('includeTankLoan').checked=data.includeTankLoan; toggleTankLoanSection(); }
   set('tankOption', data.tankOption);
+  applyTankLoanUI();
   if (data.priceDisplayMode) { document.getElementById('priceDisplayCombined').checked = (data.priceDisplayMode === 'combined'); updatePriceDisplayLabels(); }
   updateValidity(); updateProgress();
 }
@@ -3126,7 +3188,8 @@ function clearAll() {
   document.getElementById('packagedRows').innerHTML='';
   document.getElementById('includeTankLoan').checked=false;
   document.getElementById('tankOption').value='';
-  document.getElementById('tankLoanArea').style.display='none';
+  document.getElementById('tankOfferType').value='';
+  applyTankLoanUI();
   document.getElementById('validDays').value='30';
   document.getElementById('closingComments').value='';
   setClientType('new');
