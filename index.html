@@ -183,6 +183,10 @@ input:checked + .slider:before{transform:translateX(16px);}
 .prefill-retry-btn{background:var(--blue-pale);border:1.5px solid var(--blue);color:var(--navy);
   border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;
   font-family:'DM Sans',sans-serif;white-space:nowrap;}
+.bb-conn{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:rgba(255,255,255,0.78);margin-top:5px;}
+.bb-conn-dot{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,0.35);flex-shrink:0;}
+.bb-conn.on .bb-conn-dot{background:#4ADE80;box-shadow:0 0 6px rgba(74,222,128,0.7);}
+.bb-conn.err .bb-conn-dot{background:#f87171;}
 </style>
 </head>
 <body>
@@ -194,6 +198,7 @@ input:checked + .slider:before{transform:translateX(16px);}
     <div>
       <div class="header-title">Quote Builder</div>
       <div class="header-subtitle">AdBlue® Supply Quotation · Formal Proposal</div>
+      <div class="bb-conn" title="Google sign-in (shared by all Field Tools)"><span class="bb-conn-dot"></span><span class="bb-conn-label">Not connected to Google</span></div>
     </div>
   </div>
 
@@ -402,13 +407,20 @@ input:checked + .slider:before{transform:translateX(16px);}
       </div>
       <div class="field-row">
         <div class="field-group">
+          <label class="field-label">Mobile</label>
+          <input type="tel" id="contactPhone" placeholder="">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Office phone</label>
+          <input type="tel" id="contactOfficePhone" placeholder="">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
           <label class="field-label">Email</label>
           <input type="email" id="contactEmail" placeholder="">
         </div>
-        <div class="field-group">
-          <label class="field-label">Phone</label>
-          <input type="tel" id="contactPhone" placeholder="">
-        </div>
+        <div class="field-group"></div>
       </div>
       <div class="field-row full">
         <div class="field-group">
@@ -699,6 +711,56 @@ const EMAILJS_PUBLIC_KEY = 'VOzIE82-mIbrEcuPK';
 const EMAILJS_SERVICE    = 'service_f0s6xv5';
 const EMAILJS_TEMPLATE   = 'template_9wr2vra'; // reuses audit notification template
 let gdriveToken = null;
+// =====================================================================
+// SHARED GOOGLE SIGN-IN (26 Nov 2026) — every Field Tools app (Hub, forms,
+// Tracker) runs on the same site with the same Google client, so one sign-in
+// is kept on this device and shared by all of them until ~10 min before
+// Google's 1-hour expiry (margin covers a long audit upload). A sign-in made
+// in another app is picked up here too. Google rejects it (401) or it
+// expires -> cleared; the next tap asks Google again. tokenLive() replaces
+// bare gdriveToken checks. Same block in every app — keep them in step.
+// =====================================================================
+const SHARED_TOKEN_STORE = 'bb_gtoken';
+let gdriveTokenExp = 0, connRejected = false;
+function storeToken(r) {
+  gdriveToken = r.access_token;
+  gdriveTokenExp = Date.now() + ((Number(r.expires_in) || 3600) - 600) * 1000;
+  try { localStorage.setItem(SHARED_TOKEN_STORE, JSON.stringify({ t: gdriveToken, exp: gdriveTokenExp })); } catch (e) {}
+  connRejected = false;
+  updateConnDot();
+}
+function clearToken() {
+  gdriveToken = null; gdriveTokenExp = 0;
+  try { localStorage.removeItem(SHARED_TOKEN_STORE); } catch (e) {}
+}
+function tokenLive() {
+  if (gdriveToken && Date.now() < gdriveTokenExp) return true;
+  try {
+    const s = JSON.parse(localStorage.getItem(SHARED_TOKEN_STORE) || 'null');
+    if (s && s.t && Date.now() < s.exp) { gdriveToken = s.t; gdriveTokenExp = s.exp; return true; }
+  } catch (e) {}
+  clearToken();   // nothing valid here or in the store (an expired entry is removed)
+  return false;
+}
+// Green dot = signed in right now; grey = not signed in / expired; red = Google rejected it.
+function updateConnDot() {
+  const on = tokenLive();
+  document.querySelectorAll('.bb-conn').forEach(el => {
+    el.classList.toggle('on', on);
+    el.classList.toggle('err', !on && connRejected);
+    const l = el.querySelector('.bb-conn-label');
+    if (l) l.textContent = on ? 'Connected to Google' : connRejected ? 'Google sign-in expired \u2014 sign in again' : 'Not connected to Google';
+  });
+}
+const _bbRawFetch = window.fetch.bind(window);
+window.fetch = async (url, opts) => {
+  const r = await _bbRawFetch(url, opts);
+  if (r.status === 401 && String(url).includes('googleapis.com')) { clearToken(); connRejected = true; updateConnDot(); }
+  return r;
+};
+setInterval(updateConnDot, 30000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') updateConnDot(); });
+document.addEventListener('DOMContentLoaded', updateConnDot);
 // Used by the quote greeting ("Hi {firstName},") — pulls just the first
 // word out of a full contact name, since the greeting shouldn't show the
 // surname.
@@ -1037,6 +1099,7 @@ function collectData() {
     contactName:     g('contactName'),
     contactEmail:    g('contactEmail'),
     contactPhone:    g('contactPhone'),
+    contactOfficePhone: g('contactOfficePhone'),   // screen only — not printed on the quote
     siteAddress:     g('siteAddress'),
     includeBulk:     document.getElementById('includeBulk').checked,
     includePackaged: document.getElementById('includePackaged').checked,
@@ -2374,7 +2437,7 @@ async function saveToDrive() {
 // DRIVE HELPERS (same pattern as other forms)
 // =====================================================================
 async function getDriveToken() {
-  if (gdriveToken) return;
+  if (tokenLive()) return;
   let _waited = 0;
   while ((typeof google==='undefined'||!google?.accounts?.oauth2) && _waited<5000) {
     await new Promise(r=>setTimeout(r,100)); _waited+=100;
@@ -2383,7 +2446,7 @@ async function getDriveToken() {
     const client = google.accounts.oauth2.initTokenClient({
       client_id: GDRIVE_CLIENT_ID,
       scope: 'https://www.googleapis.com/auth/drive.file',
-      callback: r => { if(r.access_token){gdriveToken=r.access_token;resolve();}else reject(new Error(r.error||'Sign-in failed')); },
+      callback: r => { if(r.access_token){storeToken(r);resolve();}else reject(new Error(r.error||'Sign-in failed')); },
       error_callback: e => reject(new Error(e.message||'Sign-in failed'))
     });
     client.requestAccessToken({ prompt:'' });
@@ -2474,7 +2537,7 @@ async function loadClientFromURL() {
       if (nm) nm.textContent = _urlName || _sessName || 'Tap below to load full details';
     } catch(e){}
   }
-  if (gdriveToken) { fetchClientDetails(clientId); }
+  if (tokenLive()) { fetchClientDetails(clientId); }
   else { showPrefillRetry(clientId); }
 }
 
@@ -2539,7 +2602,7 @@ async function fetchClientDetails(clientId) {
     const addrEl = document.getElementById('siteAddress');
     if (addrEl && get('Street Address')) addrEl.value = get('Street Address');
     _loadedContacts = [
-      { role:'Site Contact',       name:get('Business Contact Name'), email:get('Business Contact Email'), phone:get('Business Contact Phone') },
+      { role:'Site Contact',       name:get('Business Contact Name'), email:get('Business Contact Email'), phone:get('Business Contact Phone'), officePhone:get('Business Contact Office Phone') },
       { role:'Key Decision Maker', name:get('KDM Name'),              email:get('KDM Email'),              phone:get('KDM Phone') },
       { role:'Logistics Contact',  name:get('Logistics Name'),        email:get('Logistics Email'),        phone:get('Logistics Phone') },
       { role:'Admin / Invoicing',  name:get('Admin Contact Name'),    email:get('Admin Contact Email'),    phone:get('Admin Contact Phone') },
@@ -2604,6 +2667,8 @@ function selectContact(i) {
   set('contactName',  c.name);
   set('contactEmail', c.email);
   set('contactPhone', c.phone);
+  const _op = document.getElementById('contactOfficePhone');
+  if (_op) _op.value = c.officePhone || '';   // only the Site Contact has an office phone
   updateProgress();
 }
 
@@ -2940,6 +3005,7 @@ function restoreQuoteFields(data) {
   set('contactName',     data.contactName);
   set('contactEmail',    data.contactEmail);
   set('contactPhone',    data.contactPhone);
+  set('contactOfficePhone', data.contactOfficePhone);
   set('siteAddress',     data.siteAddress);
   set('closingComments', data.closingComments);
   if (data.terms) { ['term1','term2','term3','term4'].forEach((id,i) => { if(data.terms[i]) set(id, data.terms[i]); }); }
@@ -3100,7 +3166,7 @@ async function emailPDFAndSaveToDrive() {
 function confirmClear() { if(confirm('Clear all quote data?')) { clearAll(); showToast('✅ Cleared'); } }
 function clearAll() {
   ['quoteDate','quoteNumber','quoteTagline','validDays','companyName','contactName','contactEmail',
-   'contactPhone','siteAddress','closingComments'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+   'contactPhone','contactOfficePhone','siteAddress','closingComments'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('bdmName').selectedIndex=0;
   document.getElementById('bulkRows').innerHTML='';
   document.getElementById('packagedRows').innerHTML='';
